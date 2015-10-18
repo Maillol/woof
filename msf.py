@@ -12,6 +12,7 @@ import peewee
 
 def parse_to_create(cls, extern, entity_conf):
     for k, v in entity_conf.items():
+        print("EXTERN", extern)
         nested = extern.get(k)
         if nested is not None and isinstance(v, dict):
             entity_conf[k] = parse_to_create(nested[0], nested[1], v)
@@ -35,11 +36,25 @@ class RESTServer:
             return response
 
     def post(self, url, query_string, entity_config):
+        #
+        # path, entity_name = environ['PATH_INFO'].rstrip('/').rsplit('/', 1)
+        # if path:
+        #    _, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, path)
+        #    query = select(entity, entity_id, join_criterias).get()
+
+        entity_name, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
         with MetaResource.db.atomic():
-            entity_name, entity_id = next(cut_path(environ['PATH_INFO']))
-            Entity = MetaResource.register[entity_name][0]
-            entity = Entity[entity_id]
-            
+            entity = parse_to_create(MetaResource.register[entity_name][0],
+                                     MetaResource.register[entity_name][1],
+                                     entity_config)
+
+        return json.dumps(model_to_dict(entity)).encode('utf-8')
+
+    def put(self, url, query_string, entity_config):
+        # TODO.
+        with MetaResource.db.atomic():
+            entity_name, entity_cls, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
+            entity = entity_cls[entity_id]
             entity.set(**entity_config)
             start_response('200 OK', response_headers)
             # update(e.set() for e in Entity if e.id == entity_id)
@@ -65,6 +80,22 @@ class RESTServer:
             if request_body_size:
                 request_body = environ['wsgi.input'].read(request_body_size)
                 entity_config = json.loads(request_body.decode('utf-8'))
+                yield self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
+
+            else:
+                start_response('500 No Body', response_headers)
+                yield b'"Request has not body"'
+
+        elif method == 'PUT':
+            try:
+                request_body_size = int(environ.get('CONTENT_LENGTH', 0))
+
+            except ValueError:
+                request_body_size = 0
+
+            if request_body_size:
+                request_body = environ['wsgi.input'].read(request_body_size)
+                entity_config = json.loads(request_body.decode('utf-8'))
                 try:                
                     self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
                 except ObjectNotFound:
@@ -74,31 +105,6 @@ class RESTServer:
             else:
                 start_response('500 No Body', response_headers)
                 yield b'"Request has not body"'
-
-        elif method == 'PUT':
-            try:
-                request_body_size = int(environ.get('CONTENT_LENGTH', 0))
-            except ValueError:
-                request_body_size = 0
-
-            path, entity_name = environ['PATH_INFO'].rstrip('/').rsplit('/', 1)
-            if path:
-                _, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, path)
-                query = select(entity, entity_id, join_criterias).get()
-
-            request_body = environ['wsgi.input'].read(request_body_size)
-            entity_config = json.loads(request_body.decode('utf-8'))
-
-            # url = '/Lieu-dep/1/Trajet/'
-            # Trajet.create(dep=1, name="Cheval", arr=paris)
-
-            with MetaResource.db.atomic():
-                entity = parse_to_create(MetaResource.register[entity_name][0],
-                                         MetaResource.register[entity_name][1],
-                                         entity_config)
-
-            start_response('201 Created', response_headers)
-            yield json.dumps(model_to_dict(entity)).encode('utf-8')
 
         elif method == 'DELETE':
             with MetaResource.db.atomic():

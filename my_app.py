@@ -18,7 +18,7 @@ if not "create table":
     Lieu = MetaResource.register['Lieu'][0]
     Trajet = MetaResource.register['Trajet'][0]
 
-    MetaResource.db.create_tables([Lieu, Trajet])
+    MetaResource.create_tables()
     with MetaResource.db.atomic():
         paris = Lieu.create(name="Paris")
         besancon = Lieu.create(name="Besancon")
