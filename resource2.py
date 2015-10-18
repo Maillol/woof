@@ -2,16 +2,25 @@ import peewee
 from functools import partial
 
 class MetaResource(type):
+    """
+    Store resource and relationship between several resource throug resource fields.
+
+    You can use MetaResource.register inorder to search ORM class using resource class Name. 
+    """
 
     db = peewee.Proxy()
     register = {} # {resource_class_name: 
                   #     (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
 
-    fields_types = {} # {name: {field_name: python_type}}
+    fields_types = {} # {name: {field_name: python_type_caster}}
     
     _resource_fields = [] 
     # TODO name_field doit pouvoir contenir également le type... Il faut amméliorer le parsing pour cast.
-    
+    # merge fields_type and register ?? 
+    #
+    # {resource_class_name: 
+    #     (ORM_cls, {refered_name_field: (refered_resource_class_name, type), ...})}
+    #
     def __init__(cls, name, parent, attrs):
         if name != 'Resource': 
         
@@ -62,9 +71,25 @@ class MetaResource(type):
             field.resource_proxy.initialize(entity)
 
     @classmethod
-    def _initialize_db(cls, database):
-        print("_initialize_db", cls.db)
-        cls.db.initialize(database)
+    def _initialize_db(mcs, database):
+        print("_initialize_db", mcs.db)
+        mcs.db.initialize(database)
+
+    @classmethod
+    def create_tables(mcs, resources_names=None):
+        """
+        Create table for each resource name in resources_names parameters. 
+        if resources_names is None, the tables for all resources in registry are created.
+        
+        resources_names - list of resource name.
+        """
+        if resources_names is None:
+            resources_names = list(mcs.register)
+
+        mcs.db.create_tables(
+            [mcs.register[name][0] for name in resources_names]        
+        )
+
 
 
 
