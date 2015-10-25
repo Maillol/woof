@@ -40,12 +40,10 @@ def path_to_sql(register, path):
 
         entity_id = next(i_path, '')
         entity = register[entity_name][0]
- 
+
     # q = Trajet.select().where(Trajet.id == 1)
     #           .join(Lieu, on=Lieu.id == Trajet.dep).where(Lieu.id==1)
 
-    print('entity', entity, repr(entity_id))
-    print('join_criterias', repr(join_criterias))
     return entity_name, entity, entity_id, join_criterias
 
 def select(entity, entity_id, join_criterias):
@@ -62,7 +60,7 @@ def select(entity, entity_id, join_criterias):
         if entity_id:
             sql_q = sql_q.where(entity.id == entity_id)
         previous_entity = entity
-    print(sql_q)
+
     return sql_q
 
 

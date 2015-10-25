@@ -7,12 +7,10 @@ from urllib.parse import parse_qsl
 from functools import partial
 from resource2 import MetaResource
 from url_parser import path_to_sql, query_string_to_where_clause, select
-import peewee
 
 
 def parse_to_create(cls, extern, entity_conf):
     for k, v in entity_conf.items():
-        print("EXTERN", extern)
         nested = extern.get(k)
         if nested is not None and isinstance(v, dict):
             entity_conf[k] = parse_to_create(nested[0], nested[1], v)
@@ -25,7 +23,7 @@ class RESTServer:
     def get(self, url, query_string):
         entity_name, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
         query = select(entity, entity_id, join_criterias)
-        
+
         if query_string:
             fields_types = MetaResource.fields_types[entity_name]
             query_string = [(k, fields_types[k.split('-')[0]](v)) for k, v in parse_qsl(query_string)]
@@ -54,13 +52,11 @@ class RESTServer:
         # TODO.
         with MetaResource.db.atomic():
             entity_name, entity_cls, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
-            entity = entity_cls[entity_id]
-            entity.set(**entity_config)
-            start_response('200 OK', response_headers)
-            # update(e.set() for e in Entity if e.id == entity_id)
-            # update(p.set(price=price * 1.1) for p in Product if p.category.name == "T-Shirt")
-            # entity.set(**dict_with_new_values)
-            return json.dumps(entity.to_dict()).encode('utf-8')
+            # FIXME: if entity_id == '': raise appropriate exception
+            entity_cls.update(**entity_config) \
+                      .where(entity_cls.id==entity_id).execute()
+
+            return json.dumps(entity_config).encode('utf-8')
 
     def __call__(self, environ, start_response):
         method = environ['REQUEST_METHOD']
@@ -80,8 +76,9 @@ class RESTServer:
             if request_body_size:
                 request_body = environ['wsgi.input'].read(request_body_size)
                 entity_config = json.loads(request_body.decode('utf-8'))
-                yield self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
-
+                response =  self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
+                start_response('201 Created', response_headers)
+                yield response
             else:
                 start_response('500 No Body', response_headers)
                 yield b'"Request has not body"'
@@ -96,8 +93,10 @@ class RESTServer:
             if request_body_size:
                 request_body = environ['wsgi.input'].read(request_body_size)
                 entity_config = json.loads(request_body.decode('utf-8'))
-                try:                
-                    self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
+                try:
+                    response = self.put(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
+                    start_response('200 OK', response_headers)
+                    yield response
                 except ObjectNotFound:
                     start_response('404 Not Found', response_headers)
                     yield 'resource doesn\'t exist' # FIXME: I would id and type resource in msg
@@ -110,12 +109,12 @@ class RESTServer:
             with MetaResource.db.atomic():
                 entity_name, entity_id = next(cut_path(environ['PATH_INFO']))
                 Entity = MetaResource.register[entity_name][0]
-                try:                
+                try:
                     entity = Entity[entity_id]
-                
+
                 except ObjectNotFound:
                     start_response('404 Not Found', response_headers)
-                    yield '"resource {} doesn\'t exist"'.format(entity_id).encode('utf-8')               
+                    yield '"resource {} doesn\'t exist"'.format(entity_id).encode('utf-8')
 
                 else:
                     deleted = json.dumps(entity.to_dict()).encode('utf-8')

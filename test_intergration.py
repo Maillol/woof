@@ -53,7 +53,7 @@ class TestCrud(unittest.TestCase):
 
     def test_03_select_books(self):
         books = self.server.get('/Book/', '')
-        books = json.loads(books.decode('utf-8'))        
+        books = json.loads(books.decode('utf-8'))
         self.assertEqual(books, self.saved_books)
 
     @unittest.skip('not implemented feature')
@@ -72,7 +72,7 @@ class TestCrud(unittest.TestCase):
         self.saved_books.append(expected_book)
         self.assertEqual(created_book, expected_book)
 
-    def test_O5_add_chapter_to_book_1(self):
+    def test_05_add_chapter_to_book_1(self):
         chapter = dict(number=1, book_id=1)
         expected_chapter = dict(
             number=1,
@@ -84,6 +84,19 @@ class TestCrud(unittest.TestCase):
         created_chapter = self.server.post('/Chapter/', '', chapter)
         created_chapter = json.loads(created_chapter.decode('utf-8'))
         self.assertEqual(created_chapter, expected_chapter)
+
+    def test_06_select_books(self):
+        books = self.server.get('/Book/', '')
+        books = json.loads(books.decode('utf-8'))
+        self.assertEqual(books, self.saved_books)
+
+    def test_08_update_books(self):
+        book = {'id': 1,
+                'title': 'Martine to the cinema',
+                'abstract': 'Chuck Noris go to the cinema with Martine'}
+        updated_book = self.server.put('/Book/1', '', book)
+        updated_book = json.loads(updated_book.decode('utf-8'))
+        self.assertEqual(book, updated_book)
 
     @classmethod
     def tearDownClass(cls):
