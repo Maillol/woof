@@ -47,7 +47,8 @@ class MetaResource(type):
                     reference_attrs['Meta'] = type('Meta', (), {
                         "primary_key": peewee.CompositeKey(related_name, weak_id_name)
                     })
-                    reference_attrs[related_name] = ResourceField(name, related_name)
+                    reference_attrs[related_name] = ResourceField(
+                        name, related_name, unique=attr.unique, null=attr.null)
 
                     composed_by_fields.append(attr_name)
 
@@ -147,6 +148,7 @@ class Field:
 
     def __init__(self, writable=True, readable=True, unique=False, null=False, weak_id=False):
         self.unique = unique
+        self.null = null
         self.writable = writable
         self.readable = readable
         self.weak_id = weak_id
@@ -170,10 +172,22 @@ class StringField(Field):
 
 class ComposedBy(Field):
     type_field = lambda a: a
-    def __init__(self, composite_name, related_name=None, writable=True, readable=True, unique=False, null=False):
-        super().__init__(writable, readable, unique, null)
+    def __init__(self, composite_name, cardinality='0..*', related_name=None, writable=True, readable=True):
+        if len(cardinality) == 4 and cardinality[1:3] == '..':
+            card_min, card_max =  cardinality.split('..')
+        elif cardinality == '1':
+            card_min = card_max = cardinality
+        elif cardinality == '*':
+            card_min, card_max = ('0', '*')
+        else:
+            raise ValueError('cardinality must be one ("1", "0..1", "1..*", "*")')
+
+        super().__init__(writable, readable, card_max=="1", card_min=="0")
         self.composite_name = composite_name
         self.related_name = related_name
+        self.card_min = card_min 
+        self.card_max = card_max
+
 
 class ResourceField(Field):
     type_field = peewee.ForeignKeyField
