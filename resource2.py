@@ -43,10 +43,14 @@ class MetaResource(type):
                             if ref_attr.weak_id:
                                 weak_id_name = ref_attr_name
 
+                    if weak_id_name is None:
+                        weak_id_name = 'weak_id'
+                        reference_attrs[weak_id_name] = NumberField(null=False)
+
                     related_name = attr.related_name or "{}_id".format(name.lower())
-                    reference_attrs['Meta'] = type('Meta', (), {
-                        "primary_key": peewee.CompositeKey(related_name, weak_id_name)
-                    })
+                    meta = reference_attrs.setdefault('Meta', type('Meta', (), {}))
+                    meta.primary_key = peewee.CompositeKey(related_name, weak_id_name)
+
                     reference_attrs[related_name] = ResourceField(
                         name, related_name, unique=attr.unique, null=attr.null)
 

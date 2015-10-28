@@ -42,21 +42,23 @@ class TestMetaRegister(unittest.TestCase):
             sorted(model._meta.primary_key.field_names),
             sorted(fields))
 
-    def setUp(self):
-        MetaResource.clear()
 
-    def test_composed_by_field(self):
+class TestComposedByCardinality(TestMetaRegister):
+
+    @classmethod
+    def setUpClass(cls):
+        MetaResource.clear()
         class A(Resource):
-            a = NumberField(weak_id=True)
+            num = NumberField(weak_id=True)
 
         class B(Resource):
-            b = NumberField(weak_id=True)
+            num = NumberField(weak_id=True)
 
         class C(Resource):
-            c = NumberField(weak_id=True)
+            num = NumberField(weak_id=True)
 
         class D(Resource):
-            d = NumberField(weak_id=True)
+            num = NumberField(weak_id=True)
 
         class R(Resource):
             a = ComposedBy('A', '1', related_name='r_to_a')
@@ -68,60 +70,89 @@ class TestMetaRegister(unittest.TestCase):
         MetaResource._build_orm_layer()
         MetaResource._name_to_ref()
 
-        orm_a_cls = MetaResource.register['A'][0]
-        orm_b_cls = MetaResource.register['B'][0]
-        orm_c_cls = MetaResource.register['C'][0]
-        orm_d_cls = MetaResource.register['D'][0]
-        orm_r_cls = MetaResource.register['R'][0]
+        cls.orm_a_cls = MetaResource.register['A'][0]
+        cls.orm_b_cls = MetaResource.register['B'][0]
+        cls.orm_c_cls = MetaResource.register['C'][0]
+        cls.orm_d_cls = MetaResource.register['D'][0]
+        cls.orm_r_cls = MetaResource.register['R'][0]
 
-        self.assertHasField(orm_a_cls, 'a', peewee.IntegerField())
-        self.assertHasField(orm_a_cls, 'r_to_a', 
-                            peewee.ForeignKeyField(orm_r_cls, unique=True, null=False))
-        self.assertHasField(orm_b_cls, 'b', peewee.IntegerField())
-        self.assertHasField(orm_b_cls, 'r_to_b', 
-                            peewee.ForeignKeyField(orm_r_cls, unique=True, null=True))
-        self.assertHasField(orm_c_cls, 'c', peewee.IntegerField())
-        self.assertHasField(orm_c_cls, 'r_to_c',
-                            peewee.ForeignKeyField(orm_r_cls, unique=False, null=False))
-        self.assertHasField(orm_d_cls, 'd', peewee.IntegerField())
-        self.assertHasField(orm_d_cls, 'r_to_d', 
-                            peewee.ForeignKeyField(orm_r_cls, unique=False, null=True))
+    def test_cardinality_only_one(self):
+        self.assertHasField(self.orm_a_cls, 'num', peewee.IntegerField())
+        self.assertHasField(self.orm_a_cls, 'r_to_a', 
+                            peewee.ForeignKeyField(self.orm_r_cls, unique=True, null=False))
 
-    def test_composed_by_weak_id(self):
+    def test_cardinality_zero_or_one(self):
+        self.assertHasField(self.orm_b_cls, 'num', peewee.IntegerField())
+        self.assertHasField(self.orm_b_cls, 'r_to_b', 
+                            peewee.ForeignKeyField(self.orm_r_cls, unique=True, null=True))
 
-        class Book(Resource):
-            title = StringField()
-            abstract = StringField()
-            chapters = ComposedBy('Chapter')
+    def test_cardinality_one_or_more(self):
+        self.assertHasField(self.orm_c_cls, 'num', peewee.IntegerField())
+        self.assertHasField(self.orm_c_cls, 'r_to_c',
+                            peewee.ForeignKeyField(self.orm_r_cls, unique=False, null=False))
 
-        class Chapter(Resource):
-            number = NumberField(weak_id=True)
-            paragraph = ComposedBy('Paragraph')
+    def test_cardinality_zero_or_more(self):
+        self.assertHasField(self.orm_d_cls, 'num', peewee.IntegerField())
+        self.assertHasField(self.orm_d_cls, 'r_to_d', 
+                            peewee.ForeignKeyField(self.orm_r_cls, unique=False, null=True))
 
-        class Paragraph(Resource):
-            number = NumberField(weak_id=True)
+
+class TestComposedWeakId(TestMetaRegister):
+
+    @classmethod
+    def setUpClass(cls):
+        MetaResource.clear()
+        class A(Resource):
+            b = ComposedBy('B', related_name='a_to_b')
+
+        class B(Resource):
+            num = NumberField(weak_id=True)
+            c = ComposedBy('C', related_name='b_to_c')
+
+        class C(Resource):
+            phony = NumberField()
+
+        MetaResource._build_foreign_key()
+        MetaResource._build_orm_layer()
+        MetaResource._name_to_ref()
+
+        cls.orm_a_cls = MetaResource.register['A'][0]
+        cls.orm_b_cls = MetaResource.register['B'][0]
+        cls.orm_c_cls = MetaResource.register['C'][0]
+
+    def test_defined_weak_id_is_used_in_composed_pk(self):
+        self.assertHasComposedPK(self.orm_b_cls, ('num', 'a_to_b'))
+
+    def test_undefined_weak_id_is_generated_and_used_in_composed_pk(self):  
+        self.assertHasField(self.orm_c_cls, 'weak_id', peewee.IntegerField(unique=False))
+        self.assertHasComposedPK(self.orm_c_cls, ('weak_id', 'b_to_c'))
+
+    def test_composed_by_field_is_not_mounted(self):
+       self.assertNotHasOwnAttr(self.orm_a_cls, 'b')
+       self.assertNotHasOwnAttr(self.orm_b_cls, 'c')
+
+    def test_weak_entity_has_no_primary_key(self):
+        self.assertNotHasOwnAttr(self.orm_b_cls, 'id')
+        self.assertNotHasOwnAttr(self.orm_c_cls, 'id')
+
+    def test_generate_related_name(self):
+        MetaResource.clear()
+        class A(Resource):
+            bbbb = ComposedBy('B')
+
+        class B(Resource):
+            num = NumberField(weak_id=True)
 
 
         MetaResource._build_foreign_key()
         MetaResource._build_orm_layer()
         MetaResource._name_to_ref()
 
-        orm_book_cls = MetaResource.register['Book'][0]
-        orm_chapter_cls = MetaResource.register['Chapter'][0]
-        orm_paragraph_cls = MetaResource.register['Paragraph'][0]
+        orm_a_cls = MetaResource.register['A'][0]
+        orm_b_cls = MetaResource.register['B'][0]
 
-        self.assertHasField(orm_book_cls, 'title', peewee.CharField())
-        self.assertHasField(orm_book_cls, 'abstract', peewee.CharField())
-        self.assertHasField(orm_book_cls, 'id', peewee.PrimaryKeyField())
-        self.assertNotHasOwnAttr(orm_book_cls, 'chapters')
+        self.assertHasComposedPK(orm_b_cls, ('num', 'a_id'))
+        self.assertHasField(orm_b_cls, 'a_id', 
+                            peewee.ForeignKeyField(orm_a_cls, null=True))
 
-        self.assertHasField(orm_chapter_cls, 'number', peewee.IntegerField())
-        self.assertHasField(orm_chapter_cls, 'book_id', peewee.ForeignKeyField(orm_book_cls, null=True))
-        self.assertHasComposedPK(orm_chapter_cls, ('number', 'book_id'))
-        self.assertNotHasOwnAttr(orm_chapter_cls, 'id')
-
-        self.assertHasField(orm_paragraph_cls, 'number', peewee.IntegerField())
-        self.assertHasField(orm_paragraph_cls, 'chapter_id', peewee.ForeignKeyField(orm_chapter_cls, null=True))
-        self.assertHasComposedPK(orm_paragraph_cls, ('number', 'chapter_id'))
-        self.assertNotHasOwnAttr(orm_paragraph_cls, 'id')
 
