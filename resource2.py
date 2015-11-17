@@ -1,5 +1,72 @@
-import peewee
 from functools import partial
+from decimal import Decimal
+import datetime
+from sqltranslater import *
+from collections import OrderedDict
+
+class DataBase:
+    def __init__(self):
+        self.connector = None
+        self.provider = None
+        self.connect_args = None
+        self.sql_translater = None
+
+    def initialize(self, database):
+        if database == 'sqlite':
+            import sqlite3 as connector
+            self.sql_translater = SqliteTranslater
+
+        elif database == 'mysql':
+            import mysql.connector as connector
+            self.sql_translater = MysqlTranslater
+
+        elif database == 'postgres':
+            from pyPgSQL import PgSQL as connector
+            self.sql_translater = PostgresTranslater
+
+        else:
+            raise ValueError('initialize parameter must be on of "sqlite", "mysql", "postgres"')
+
+        self.provider = database
+        self.connector = connector
+    
+    def connect(self, *args):
+        self.connect_args = args        
+        self.cursor = self.connector.connect(*args)
+        
+    def execute(self, sql_query):
+        return self.cursor.execute(sql_query)
+
+
+def to_underscore(name):
+    """
+    >>> to_underscore("FooBar")
+    'foo_bar'
+    >>> to_underscore("HTTPServer")
+    'http_server'
+    """
+    if not name:
+        return name
+    iterator = iter(name)
+    out = [next(iterator).lower()]        
+    last_is_upper = True
+    parse_abbreviation = False
+    for char in iterator:
+        if char.isupper():
+            if last_is_upper:
+                parse_abbreviation = True
+                out.append(char.lower())
+            else:
+                out.append('_' + char.lower())
+            last_is_upper = True
+        else:
+            if parse_abbreviation:
+                out.insert(-1, '_')
+                parse_abbreviation = False
+            out.append(char)
+            last_is_upper = False
+    return "".join(out)
+
 
 class MetaResource(type):
     """
@@ -8,91 +75,126 @@ class MetaResource(type):
     You can use MetaResource.register inorder to search ORM class using resource class Name.
     """
 
-    db = peewee.Proxy()
+    db = DataBase()
     register = {} # {resource_class_name:
                   #     (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
 
     fields_types = {} # {name: {field_name: python_type_caster}}
 
-    _resource_fields = []
-    # TODO name_field doit pouvoir contenir également le type... Il faut amméliorer le parsing pour cast.
-    # merge fields_type and register ??
-    #
-    # {resource_class_name:
-    #     (ORM_cls, {refered_name_field: (refered_resource_class_name, type), ...})}
-    #
-
     _starting_block = {}
 
     def __init__(cls, name, parent, attrs):
         if name != 'Resource':
-            MetaResource._starting_block[name] = (cls, parent, attrs)
+            cls._fields = []
+            id_fields = []
+            weak_id_fields = []
+            MetaResource._starting_block[name] = cls
+            for field_name, field in attrs.items():
+                if isinstance(field, Field):
+                    field.name = field_name
+                    cls._fields.append(field)
+                    if field.primary_key:
+                        id_fields.append(field)
+                    if field.weak_id:
+                        weak_id_fields.append(field)
+            
+            meta = attrs.setdefault('Meta', type('Meta', (), {}))
+            if weak_id_fields and id_fields:
+                raise TypeError("Resource with primary_key cannot have weak_id")
+            #elif not (weak_id_fields or id_fields):
+            #    cls.id = IntegerField(primary_key=True)
+            #    cls.id.name = 'id'
+            #    id_fields.append(cls.id)
+
+            meta.primary_key = id_fields
+            meta.weak_id = weak_id_fields
+            if not hasattr(meta, 'constraints'):
+                meta.constraints = []
+            cls.Meta = meta
 
     @classmethod
+    def __prepare__(self, cls, bases):
+        return OrderedDict()
+
+    # FIXME _build_foreign_key must raise error when Resource has weak_id without be referenced by an other resource
+    @classmethod
     def _build_foreign_key(mcs):
-        for name, (_, _, attrs) in MetaResource._starting_block.items():
-            composed_by_fields = []
-            for attr_name, attr in attrs.items():
-                if isinstance(attr, ComposedBy):
-                    reference_attrs = MetaResource._starting_block[attr.composite_name][2]
+        
+        def add_field(resource, name, field, position=None):
+            if position is None:
+                position = len(resource._fields)
+            resource._fields.insert(position, field)
+            field.name = name            
+            setattr(resource, name, field)
+            if field.primary_key:
+                resource.Meta.primary_key.append(field)
+            elif field.weak_id:
+                resource.Meta.weak_id.append(field)
 
-                    # Search references weak_id
-                    weak_id_name = None
-                    for ref_attr_name, ref_attr in reference_attrs.items():
-                        if isinstance(ref_attr, Field):
-                            if ref_attr.weak_id:
-                                weak_id_name = ref_attr_name
+        def make_id_if_not_exist(resource):
+            if not resource.Meta.primary_key:
+                add_field(resource, 'id', IntegerField(primary_key=True), 0)
 
-                    if weak_id_name is None:
-                        weak_id_name = 'weak_id'
-                        reference_attrs[weak_id_name] = NumberField(null=False)
+        def make_weak_id_if_not_exist(resource):
+            if not resource.Meta.weak_id:
+                add_field(resource, 'weak_id', IntegerField(weak_id=True), 0)
 
-                    related_name = attr.related_name or "{}_id".format(name.lower())
-                    meta = reference_attrs.setdefault('Meta', type('Meta', (), {}))
-                    meta.primary_key = peewee.CompositeKey(related_name, weak_id_name)
+        # Generate weak_id: 
+        # TODO generate reated_field...
+        for resource_name, resource in MetaResource._starting_block.items():
+            for field in resource._fields:
+                if isinstance(field, ComposedBy):
+                    weak_entity = MetaResource._starting_block[field.other_resource]
+                    if weak_entity.Meta.primary_key:
+                        raise TypeError(weak_entity + 
+                                        ' cannot have primary key because it is contained in ' + resource)
+                    make_weak_id_if_not_exist(weak_entity)
+                    weak_entity.Meta.referenced_by = resource
 
-                    reference_attrs[related_name] = ResourceField(
-                        name, related_name, unique=attr.unique, null=attr.null)
+        # Generate id
+        for resource_name, resource in MetaResource._starting_block.items():
+            if not resource.Meta.weak_id:
+                make_id_if_not_exist(resource)
 
-                    composed_by_fields.append(attr_name)
+        for resource_name, resource in MetaResource._starting_block.items():
+            resource.Meta.constraints.append(
+                PrimaryKey([e[0] for e in resource._id_fields_names()]))
+            for field in resource._fields:
+                if isinstance(field, ComposedBy):
+                    other_resource = MetaResource._starting_block[field.other_resource]
+                    id_names = other_resource._id_fields_names()
+                    fk_names = id_names[len(other_resource.Meta.weak_id):]
+                    ref_id = resource._id_fields_names()
 
-            for e in composed_by_fields:
-                del attrs[e]
+                    for fk_name, fk_field in fk_names:
+                        add_field(other_resource, fk_name, type(fk_field)())
+
+                    other_resource.Meta.constraints.append(
+                        ForeignKey([e[0] for e in fk_names], resource.table_name(),
+                                   [e[0] for e in resource._id_fields_names()])
+                    )
+                    # TODO add sql alter table FK dans sqltranslater
+                    # TODO faire une fontion select et save dans RESOURCE
 
     @classmethod
     def _build_orm_layer(mcs):
-
-        for name, (cls, parent, attrs) in MetaResource._starting_block.items():
-
-            entity_attrs = {attr_name: attr_value.type_field()
-                            for attr_name, attr_value in attrs.items()
-                            if isinstance(attr_value, Field)}
-
-            meta = attrs.get('Meta', type('Meta', (), {}))
-            meta.database = MetaResource.db
-            entity_attrs['Meta'] = meta
-
-            cls.register[name] = (
-                type(name, (peewee.Model,), entity_attrs),
-                {attr_name: attr_value.resource_name
-                 for attr_name, attr_value in attrs.items()
-                 if isinstance(attr_value, ResourceField)}
+        for name, cls in MetaResource._starting_block.items():
+            mcs.register[name] = (
+                cls,
+                {field.name: field.other_resource
+                 for field in cls._fields
+                 if isinstance(field, ComposedBy)}
             )
 
-            cls.fields_types[name] = {
-                attr_name: attr_value.to_py_factory
-                for attr_name, attr_value in attrs.items()
-                if isinstance(attr_value, Field)
+            mcs.fields_types[name] = {
+                field.name: field.to_py_factory
+                for field in cls._fields
             }
-
-            cls._resource_fields.extend(field
-                                        for field in attrs.values()
-                                        if isinstance(field, ResourceField))
 
     @classmethod
     def _name_to_ref(cls):
         """
-        Optimize register and initialize foreign key proxy
+        Optimize register
 
         from:
             {resource_class_name:
@@ -107,10 +209,6 @@ class MetaResource(type):
             for attr_name, cls_name in extern.items():
                 extern[attr_name] = cls.register[cls_name]
 
-        for field in cls._resource_fields:
-            entity = cls.register[field.resource_name][0]
-            field.resource_proxy.initialize(entity)
-
 
     @classmethod
     def create_tables(mcs, resources_names=None):
@@ -122,18 +220,20 @@ class MetaResource(type):
         """
         if resources_names is None:
             resources_names = list(mcs.register)
-
-        mcs.db.create_tables(
-            [mcs.register[name][0] for name in resources_names]
-        )
+        for resource_name in resources_names:
+            resource = mcs.register[resource_name][0]
+            mcs.db.execute(mcs.db.sql_translater.translate(resource))
+        for resource_name in resources_names:
+            resource = mcs.register[resource_name][0]
+            mcs.db.execute(mcs.db.sql_translater.translate_fk(resource))
 
     @classmethod
-    def initialize(mcs, database):
+    def initialize(mcs, database, host):
         mcs._build_foreign_key()
         mcs._build_orm_layer()
         mcs._name_to_ref()
         mcs.db.initialize(database)
-        MetaResource.db.connect()
+        mcs.db.connect(host)
 
     @classmethod
     def clear(mcs):
@@ -143,40 +243,119 @@ class MetaResource(type):
         mcs._starting_block = {}
 
 
+class PrimaryKey:
+    def __init__(self, fields):
+        self.fields = fields
+
+class ForeignKey:
+    def __init__(self, fields, referenced_resource, referenced_fields):
+        self.fields = fields
+        self.referenced_resource = referenced_resource
+        self.referenced_fields = referenced_fields
+
+
 class Resource(metaclass=MetaResource):
-    pass
+
+    @classmethod
+    def table_name(cls):
+        return to_underscore(cls.__name__)
+
+    @classmethod
+    def _id_fields_names(cls):
+        if cls.Meta.primary_key:
+            return [(field.name, field) for field in cls.Meta.primary_key]
+        else:
+            prefix = cls.Meta.referenced_by.table_name()
+            fields = [(field.name, field) for field in cls.Meta.weak_id]
+            fields.extend(
+                ('{}_{}'.format(prefix, field_name), field)
+                for (field_name, field) in cls.Meta.referenced_by._id_fields_names()
+            )
+            return fields
 
 
 class Field:
     to_py_factory = None
 
-    def __init__(self, writable=True, readable=True, unique=False, null=False, weak_id=False):
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False):
         self.unique = unique
-        self.null = null
+        self.nullable = nullable
         self.writable = writable
         self.readable = readable
         self.weak_id = weak_id
-        self.type_field = partial(type(self).type_field, unique=unique, null=null)
+        self.primary_key = primary_key
+   
+    @property
+    def null(self):
+        if self.nullable:
+            return 'NULL' 
+        return 'NOT NULL'
+
+class FloatField(Field):
+    to_py_factory = float
 
 
-class BoolField(Field):
-    to_py_factory = bool
-    type_field = peewee.BooleanField
+class BinaryField(Field):
+    to_py_factory = bytes
 
 
-class NumberField(Field):
+class DateField(Field):
+    to_py_factory = datetime.date
+
+
+class DateTimeField(Field):
+    to_py_factory = datetime.datetime
+
+
+class NumericField(Field):
+    
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, precision=10, scale=3):
+        """
+        precision: number of digits
+        scale: number of digits after the decimal
+        """
+        super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
+        self.precision = precision
+        self.scale = scale
+
+    @staticmethod
+    def to_py_factory(value):
+         return Decimal(str(value))
+    
+
+class IntegerField(Field):
+
     to_py_factory = int
-    type_field = peewee.IntegerField
 
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, 
+                 min_value=-2147483648, max_value=2147483647):
+        super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
+        try:
+            self.min_value = int(min_value)
+        except ValueError:
+            raise TypeError('min_value must be an integer (got {})'.format(type(min_value)))
+
+        try:
+            self.max_value = int(max_value)
+        except ValueError:
+            raise TypeError('max_value must be an integer (got {})'.format(type(max_value)))
+
+        if (self.min_value >= max_value):
+            raise ValueError('max_value must be greater than min_value')
 
 class StringField(Field):
     to_py_factory = str
-    type_field = peewee.CharField
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, 
+                 length=255, fixe_length=False):
+        super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
+        self.length = int(length)
+        self.fixe_length = int(fixe_length)
 
 
 class ComposedBy(Field):
-    type_field = lambda a: a
-    def __init__(self, composite_name, cardinality='0..*', related_name=None, writable=True, readable=True):
+    def __init__(self, other_resource, cardinality='0..*', related_name=None, writable=True, readable=True):
+        if not isinstance(other_resource, str):
+            raise TypeError('other_resource must be str (got {})'.format(type(other_resource)))
         if len(cardinality) == 4 and cardinality[1:3] == '..':
             card_min, card_max =  cardinality.split('..')
         elif cardinality == '1':
@@ -187,17 +366,20 @@ class ComposedBy(Field):
             raise ValueError('cardinality must be one ("1", "0..1", "1..*", "*")')
 
         super().__init__(writable, readable, card_max=="1", card_min=="0")
-        self.composite_name = composite_name
+        self.other_resource = other_resource
         self.related_name = related_name
-        self.card_min = card_min 
+        self.card_min = card_min
         self.card_max = card_max
+
+        if self.related_name is None:
+            self.related_name = to_underscore(other_resource) + '_ref'
 
 
 class ResourceField(Field):
-    type_field = peewee.ForeignKeyField
+    to_py_factory = int # FIXME must be resource_name primary_key
 
-    def __init__(self, resource_name, related_name=None, writable=True, readable=True, unique=False, null=False):
-        super().__init__(writable, readable, unique, null)
+    def __init__(self, resource_name, related_name=None, writable=True, readable=True, unique=False, nullable=False):
+        super().__init__(writable, readable, unique, nullable)
         self.resource_proxy = peewee.Proxy()
         self.type_field = partial(self.type_field,
                                   self.resource_proxy, related_name=related_name)
@@ -207,6 +389,10 @@ class ResourceField(Field):
     def __repr__(self):
         return '<ResourceField to %s>' % self.resource_name
 
+    @property
+    def referenced_resource(self):
+        MetaResource.register[self.related_name][0]
 
-__all__= ['ResourceField', 'ComposedBy', 'StringField', 'NumberField',
-          'BoolField', 'Resource', 'MetaResource']
+
+__all__= ['NumericField', 'ResourceField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
+          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField']

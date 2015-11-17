@@ -25,7 +25,7 @@ class TestCrud(unittest.TestCase):
             chapters = ComposedBy('Chapter')
 
         class Chapter(Resource):
-            number = NumberField(weak_id=True)
+            number = IntegerField(weak_id=True)
 
         cls.tmp_dir = TemporaryDirectory()
 

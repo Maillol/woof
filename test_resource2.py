@@ -1,158 +1,321 @@
 #!/usr/bin/env python3
 
 import unittest
-from imp import reload
 from resource2 import *
-import peewee
+import sqltranslater
+import resource2
+from datetime import date
+from decimal import Decimal
 
 
-class TestMetaRegister(unittest.TestCase):
+class MockedDataBase(resource2.DataBase):
+    calls = []
 
-    def assertHasField(self, obj, attr_name, field):
-        self.assertIn(attr_name, vars(obj))
-        self.assertEqual(type(getattr(obj, attr_name)), type(field))
+    def __init__(self, *args):
+        self.sql_translater = sqltranslater.SQLTranslater
+
+    def initialize(self, database):
+        ...
+    
+    def connect(self, *args):
+        ...
         
-        msg = "%s field mustn't be unique" % attr_name
-        if field.unique:
-            msg = "%s field must be unique" % attr_name         
-        self.assertEqual(getattr(obj, attr_name).unique,
-                         field.unique, msg)
-
-        msg = "%s field must be not null" % attr_name
-        if field.null:
-            msg = "%s field must be null" % attr_name         
-        self.assertEqual(getattr(obj, attr_name).null,
-                         field.null, msg)
-
-        msg = "%s field must be primary_key" % attr_name
-        if field.primary_key:
-            msg = "%s field mustn't be primary_key" % attr_name      
-        self.assertEqual(getattr(obj, attr_name).primary_key,
-                         field.primary_key, msg)
-
-        if isinstance(field, peewee.ForeignKeyField):
-            self.assertEqual(getattr(obj, attr_name).rel_model,
-                             field.rel_model)
-
-    def assertNotHasOwnAttr(self, obj, attr_name):
-        self.assertNotIn(attr_name, vars(obj))
-
-    def assertHasComposedPK(self, model, fields):
-        self.assertEqual(
-            sorted(model._meta.primary_key.field_names),
-            sorted(fields))
+    def execute(self, sql_query):
+        self.calls.append(sql_query)
 
 
-class TestComposedByCardinality(TestMetaRegister):
+MetaResource.db = MockedDataBase()
+
+
+class TestPyToSql(unittest.TestCase):
+
+    def setUp(self):
+        MockedDataBase.calls = []
+        MetaResource.clear()
+
+    def assertExecute(self, sql):
+        self.assertIn(sql, MockedDataBase.calls)
+
+
+class TestFieldToSql(TestPyToSql):
+
+    def test_float_field(self):
+        class FooBar(Resource):
+            a = FloatField()            
+            b = FloatField(nullable=True)
+            c = FloatField(primary_key=True)
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE foo_bar('
+            'a REAL NOT NULL, '
+            'b REAL NULL, '
+            'c REAL NOT NULL, '
+            'PRIMARY KEY (c));')           
+
+    def test_date_field(self):
+        class FooBar(Resource):
+            a = DateField()            
+            b = DateField(nullable=True)
+            c = DateField(primary_key=True)
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE foo_bar('
+            'a DATE NOT NULL, '
+            'b DATE NULL, '
+            'c DATE NOT NULL, '
+            'PRIMARY KEY (c));')           
+
+    def test_numeric_field(self):
+        class FooBar(Resource):
+            a = NumericField()            
+            b = NumericField(nullable=True, precision=12, scale=4)
+            c = NumericField(primary_key=True)
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE foo_bar('
+            'a NUMERIC(10, 3) NOT NULL, '
+            'b NUMERIC(12, 4) NULL, '
+            'c NUMERIC(10, 3) NOT NULL, '
+            'PRIMARY KEY (c));')  
+
+    def test_integer_field(self):
+        min_small_int = -32768
+        max_small_int = 32767
+        min_int = -2147483648
+        max_int = 2147483647
+        max_unsigned_small_int = 65535
+        max_unsigned_int = 4294967295
+
+        class FooBar(Resource):
+            a = IntegerField()
+            b = IntegerField(nullable=True)
+            c = IntegerField(primary_key=True)
+            d = IntegerField(min_value=min_small_int, max_value=max_small_int)
+            e = IntegerField(min_value=min_small_int -1, max_value=max_small_int)
+            f = IntegerField(min_value=min_small_int, max_value=max_small_int + 1)
+            g = IntegerField(min_value=min_int, max_value=max_int)
+            h = IntegerField(min_value=min_int - 1, max_value=max_int)
+            i = IntegerField(min_value=min_int, max_value=max_int + 1)
+            j = IntegerField(min_value=0, max_value=max_unsigned_small_int)
+            k = IntegerField(min_value=0, max_value=max_unsigned_small_int + 1)
+            l = IntegerField(min_value=0, max_value=max_unsigned_int)
+            m = IntegerField(min_value=0, max_value=max_unsigned_int + 1)
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE foo_bar('
+            'a INTEGER NOT NULL, '
+            'b INTEGER NULL, '
+            'c INTEGER NOT NULL, '
+            'd SMALLINT NOT NULL, '
+            'e INTEGER NOT NULL, '
+            'f INTEGER NOT NULL, '
+            'g INTEGER NOT NULL, '
+            'h BIGINT NOT NULL, '
+            'i BIGINT NOT NULL, '
+            'j SMALLINT UNSIGNED NOT NULL, '
+            'k INTEGER UNSIGNED NOT NULL, '
+            'l INTEGER UNSIGNED NOT NULL, '
+            'm BIGINT UNSIGNED NOT NULL, '
+            'PRIMARY KEY (c));')  
+
+    def test_string_field(self):
+        class FooBar(Resource):
+            a = StringField()            
+            b = StringField(nullable=True)
+            c = StringField(primary_key=True)
+            d = StringField(fixe_length=True, length=32)            
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE foo_bar('
+            'a VARCHAR(255) NOT NULL, '
+            'b VARCHAR(255) NULL, '
+            'c VARCHAR(255) NOT NULL, '
+            'd CHAR(32) NOT NULL, '
+            'PRIMARY KEY (c));')
+
+    def test_composed_by(self):
+        class ResA(Resource):
+            a = StringField()
+
+        class ResB(Resource):
+            a = StringField()
+            res_a_set = ComposedBy('ResA')
+
+        class ResC(Resource):
+            a = StringField()
+            res_a_set = ComposedBy('ResB')
+
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
+
+        self.assertExecute(
+            'CREATE TABLE res_a('
+            'weak_id INTEGER NOT NULL, '
+            'a VARCHAR(255) NOT NULL, '
+            'res_b_weak_id INTEGER NOT NULL, '
+            'res_b_res_c_id INTEGER NOT NULL, '
+            'PRIMARY KEY (weak_id, res_b_weak_id, res_b_res_c_id));')
+
+        self.assertExecute(
+            'CREATE TABLE res_b(weak_id INTEGER NOT NULL, '
+            'a VARCHAR(255) NOT NULL, '
+            'res_c_id INTEGER NOT NULL, '
+            'PRIMARY KEY (weak_id, res_c_id));')
+
+        self.assertExecute(
+            'CREATE TABLE res_c('
+            'id INTEGER NOT NULL, '
+            'a VARCHAR(255) NOT NULL, '
+            'PRIMARY KEY (id));')
+
+        self.assertExecute(
+            'ALTER TABLE res_a '
+            'ADD FOREIGN KEY (res_b_weak_id, res_b_res_c_id) '
+            'REFERENCES res_b(weak_id, res_c_id);')
+
+        self.assertExecute(
+            'ALTER TABLE res_b '
+            'ADD FOREIGN KEY (res_c_id) '
+            'REFERENCES res_c(id);')
+
+
+class TestComposedByCardinality(unittest.TestCase):
+
+    def assertExecute(self, sql):
+        self.assertIn(sql, MockedDataBase.calls)
 
     @classmethod
     def setUpClass(cls):
+        MockedDataBase.calls = []
         MetaResource.clear()
+
         class A(Resource):
-            num = NumberField(weak_id=True)
+            num = IntegerField(weak_id=True)
 
         class B(Resource):
-            num = NumberField(weak_id=True)
+            num = IntegerField(weak_id=True)
 
         class C(Resource):
-            num = NumberField(weak_id=True)
+            num = IntegerField(weak_id=True)
 
         class D(Resource):
-            num = NumberField(weak_id=True)
+            num = IntegerField(weak_id=True)
 
         class R(Resource):
-            a = ComposedBy('A', '1', related_name='r_to_a')
-            b = ComposedBy('B', '0..1', related_name='r_to_b')
-            c = ComposedBy('C', '1..*', related_name='r_to_c')
-            d = ComposedBy('D', '*', related_name='r_to_d')
+            a = ComposedBy('A', '1')
+            b = ComposedBy('B', '0..1')
+            c = ComposedBy('C', '1..*')
+            d = ComposedBy('D', '*')
 
-        MetaResource._build_foreign_key()
-        MetaResource._build_orm_layer()
-        MetaResource._name_to_ref()
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
 
-        cls.orm_a_cls = MetaResource.register['A'][0]
-        cls.orm_b_cls = MetaResource.register['B'][0]
-        cls.orm_c_cls = MetaResource.register['C'][0]
-        cls.orm_d_cls = MetaResource.register['D'][0]
-        cls.orm_r_cls = MetaResource.register['R'][0]
+        cls.orm_a_cls = A
+        cls.orm_b_cls = B
+        cls.orm_c_cls = C
+        cls.orm_d_cls = D
+        cls.orm_r_cls = R
 
     def test_cardinality_only_one(self):
-        self.assertHasField(self.orm_a_cls, 'num', peewee.IntegerField())
-        self.assertHasField(self.orm_a_cls, 'r_to_a', 
-                            peewee.ForeignKeyField(self.orm_r_cls, unique=True, null=False))
+        self.assertExecute(
+            'CREATE TABLE a('
+            'num INTEGER NOT NULL, '
+            'r_id INTEGER NOT NULL, '
+            'PRIMARY KEY (num, r_id));')
+        self.assertExecute(
+            'ALTER TABLE a '
+            'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
 
     def test_cardinality_zero_or_one(self):
-        self.assertHasField(self.orm_b_cls, 'num', peewee.IntegerField())
-        self.assertHasField(self.orm_b_cls, 'r_to_b', 
-                            peewee.ForeignKeyField(self.orm_r_cls, unique=True, null=True))
+        self.assertExecute(
+            'CREATE TABLE b('
+            'num INTEGER NOT NULL, '
+            'r_id INTEGER NOT NULL, '
+            'PRIMARY KEY (num, r_id));')
+        self.assertExecute(
+            'ALTER TABLE b '
+            'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
 
     def test_cardinality_one_or_more(self):
-        self.assertHasField(self.orm_c_cls, 'num', peewee.IntegerField())
-        self.assertHasField(self.orm_c_cls, 'r_to_c',
-                            peewee.ForeignKeyField(self.orm_r_cls, unique=False, null=False))
+        self.assertExecute(
+            'CREATE TABLE c('
+            'num INTEGER NOT NULL, '
+            'r_id INTEGER NOT NULL, '
+            'PRIMARY KEY (num, r_id));') 
+        self.assertExecute(
+            'ALTER TABLE c '
+            'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
 
     def test_cardinality_zero_or_more(self):
-        self.assertHasField(self.orm_d_cls, 'num', peewee.IntegerField())
-        self.assertHasField(self.orm_d_cls, 'r_to_d', 
-                            peewee.ForeignKeyField(self.orm_r_cls, unique=False, null=True))
+        self.assertExecute(
+            'CREATE TABLE d('
+            'num INTEGER NOT NULL, '
+            'r_id INTEGER NOT NULL, '
+            'PRIMARY KEY (num, r_id));')
+        self.assertExecute(
+            'ALTER TABLE d '
+            'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
 
 
-class TestComposedWeakId(TestMetaRegister):
+class TestTypeFieldMetaData(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         MetaResource.clear()
         class A(Resource):
-            b = ComposedBy('B', related_name='a_to_b')
+            ref = ComposedBy('B')
+            ref_c = ComposedBy('C')
 
         class B(Resource):
-            num = NumberField(weak_id=True)
-            c = ComposedBy('C', related_name='b_to_c')
-
+            n = IntegerField(weak_id=True)
+            b = BinaryField()
+            f = FloatField()
+        
         class C(Resource):
-            phony = NumberField()
+            s = StringField(weak_id=True)
+            d = DateField()
+            n = NumericField()
 
-        MetaResource._build_foreign_key()
-        MetaResource._build_orm_layer()
-        MetaResource._name_to_ref()
+        MetaResource.initialize('', '')
+        MetaResource.create_tables()
 
-        cls.orm_a_cls = MetaResource.register['A'][0]
-        cls.orm_b_cls = MetaResource.register['B'][0]
-        cls.orm_c_cls = MetaResource.register['C'][0]
+    def test_number_field_type(self):
+        self.assertEqual(MetaResource.fields_types['B']['n'], int)
 
-    def test_defined_weak_id_is_used_in_composed_pk(self):
-        self.assertHasComposedPK(self.orm_b_cls, ('num', 'a_to_b'))
+    def test_bool_field_type(self):
+        self.assertEqual(MetaResource.fields_types['B']['b'], bytes)
 
-    def test_undefined_weak_id_is_generated_and_used_in_composed_pk(self):  
-        self.assertHasField(self.orm_c_cls, 'weak_id', peewee.IntegerField(unique=False))
-        self.assertHasComposedPK(self.orm_c_cls, ('weak_id', 'b_to_c'))
+    def test_string_field_type(self):
+        self.assertEqual(MetaResource.fields_types['B']['f'], float)
 
-    def test_composed_by_field_is_not_mounted(self):
-       self.assertNotHasOwnAttr(self.orm_a_cls, 'b')
-       self.assertNotHasOwnAttr(self.orm_b_cls, 'c')
+    def test_reference_field_type(self):
+        self.assertEqual(MetaResource.fields_types['B']['a_id'], int)
 
-    def test_weak_entity_has_no_primary_key(self):
-        self.assertNotHasOwnAttr(self.orm_b_cls, 'id')
-        self.assertNotHasOwnAttr(self.orm_c_cls, 'id')
+    def test_weak_id_string_field_type(self):
+        self.assertEqual(MetaResource.fields_types['C']['s'], str)
 
-    def test_generate_related_name(self):
-        MetaResource.clear()
-        class A(Resource):
-            bbbb = ComposedBy('B')
+    def test_date_field_type(self):
+        self.assertEqual(MetaResource.fields_types['C']['d'], date)
 
-        class B(Resource):
-            num = NumberField(weak_id=True)
+    def test_numeric_field_type(self):
+        self.assertEqual(MetaResource.fields_types['C']['n']('3.14'),
+            Decimal('3.14'))
 
-
-        MetaResource._build_foreign_key()
-        MetaResource._build_orm_layer()
-        MetaResource._name_to_ref()
-
-        orm_a_cls = MetaResource.register['A'][0]
-        orm_b_cls = MetaResource.register['B'][0]
-
-        self.assertHasComposedPK(orm_b_cls, ('num', 'a_id'))
-        self.assertHasField(orm_b_cls, 'a_id', 
-                            peewee.ForeignKeyField(orm_a_cls, null=True))
-
+    def test_generated_pk_field_type(self):
+        self.assertEqual(MetaResource.fields_types['A']['id'], int)
 
