@@ -17,7 +17,9 @@ class DataBase:
             self.sql_translater = SqliteTranslater
 
         elif database == 'mysql':
-            import mysql.connector as connector
+            #  mysql -u root -p ;create database msf
+            import pymysql
+            connector = pymysql.connect # (host='localhost', password="pwd", user='root', db='msf')
             self.sql_translater = MysqlTranslater
 
         elif database == 'postgres':
@@ -29,13 +31,13 @@ class DataBase:
 
         self.provider = database
         self.connector = connector
-    
+
     def connect(self, *args):
-        self.connect_args = args        
+        self.connect_args = args
         self.cursor = self.connector.connect(*args)
-        
-    def execute(self, sql_query):
-        return self.cursor.execute(sql_query)
+
+    def execute(self, sql_query, parameters=()):
+        return self.cursor.execute(sql_query, parameters)
 
 
 def to_underscore(name):
@@ -48,7 +50,7 @@ def to_underscore(name):
     if not name:
         return name
     iterator = iter(name)
-    out = [next(iterator).lower()]        
+    out = [next(iterator).lower()]
     last_is_upper = True
     parse_abbreviation = False
     for char in iterator:
@@ -97,7 +99,7 @@ class MetaResource(type):
                         id_fields.append(field)
                     if field.weak_id:
                         weak_id_fields.append(field)
-            
+
             meta = attrs.setdefault('Meta', type('Meta', (), {}))
             if weak_id_fields and id_fields:
                 raise TypeError("Resource with primary_key cannot have weak_id")
@@ -119,12 +121,12 @@ class MetaResource(type):
     # FIXME _build_foreign_key must raise error when Resource has weak_id without be referenced by an other resource
     @classmethod
     def _build_foreign_key(mcs):
-        
+
         def add_field(resource, name, field, position=None):
             if position is None:
                 position = len(resource._fields)
             resource._fields.insert(position, field)
-            field.name = name            
+            field.name = name
             setattr(resource, name, field)
             if field.primary_key:
                 resource.Meta.primary_key.append(field)
@@ -139,14 +141,14 @@ class MetaResource(type):
             if not resource.Meta.weak_id:
                 add_field(resource, 'weak_id', IntegerField(weak_id=True), 0)
 
-        # Generate weak_id: 
+        # Generate weak_id:
         # TODO generate reated_field...
         for resource_name, resource in MetaResource._starting_block.items():
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     weak_entity = MetaResource._starting_block[field.other_resource]
                     if weak_entity.Meta.primary_key:
-                        raise TypeError(weak_entity + 
+                        raise TypeError(weak_entity +
                                         ' cannot have primary key because it is contained in ' + resource)
                     make_weak_id_if_not_exist(weak_entity)
                     weak_entity.Meta.referenced_by = resource
@@ -254,7 +256,62 @@ class ForeignKey:
         self.referenced_fields = referenced_fields
 
 
+class Query:
+    class Cursor():
+        def __init__(self, cursor, resource, field_names):
+            self._cursor = cursor
+            self._resource = resource
+            self._field_names = field_names
+
+        def __next__(self):
+            values = self._cursor.fetchone()
+            if values is None:
+                raise StopIteration()
+            return self._resource(**dict(zip(self._field_names, values)))
+
+
+    def __init__(self, resource):
+        self.resource = resource
+        self.join_criteria = []
+        self.where_criteria = []
+
+    def join(self, resource, on=None):
+        self.join_criteria.append((resource, on))
+        return self
+
+    def where(self, criteria):
+        self.where_criteria.append(criteria)
+        return self
+
+    def __iter__(self):
+        field_names = [field.name
+                       for field in self.resource._fields
+                       if not isinstance(field, ComposedBy)]
+
+        cursor = type(self.resource).db.execute(
+            "SELECT {} FROM {}".format(
+             ', '.join(field_names),
+             self.resource.table_name())
+        );
+
+        return self.Cursor(cursor, self.resource, field_names)
+
+
 class Resource(metaclass=MetaResource):
+
+    def __init__(self, **kwargs):
+        self._state = {}
+        expected_fields_name = set(field.name for field in self._fields)
+        got_fields = set(kwargs)
+        wrong_fields = got_fields - set(expected_fields_name)
+
+        if wrong_fields:
+            raise TypeError("{}() got an unexpected keyword argument '{}'"
+                            .format(type(self.__name__),
+                                    next(iter(wrong_fields))))
+
+        for field_name in got_fields:
+            setattr(self, field_name, kwargs[field_name])
 
     @classmethod
     def table_name(cls):
@@ -273,6 +330,23 @@ class Resource(metaclass=MetaResource):
             )
             return fields
 
+    @classmethod
+    def select(cls, **kwargs):
+        return Query(cls)
+
+    def save(self):
+        fields = []
+        values = []
+        for field, value in self._state.items():
+            fields.append(field)
+            values.append(value)
+
+        query = ('INSERT INTO {} ({}) VALUES ({});'
+                 .format(self.table_name(),
+                         ', '.join(fields),
+                         ','.join('?' * len(fields))))
+        type(type(self)).db.execute(query, values)
+
 
 class Field:
     to_py_factory = None
@@ -284,12 +358,19 @@ class Field:
         self.readable = readable
         self.weak_id = weak_id
         self.primary_key = primary_key
-   
+
     @property
     def null(self):
         if self.nullable:
-            return 'NULL' 
+            return 'NULL'
         return 'NOT NULL'
+
+    def __get__(self, obj, cls=None):
+        return self.to_py_factory(obj._state[self.name])
+
+    def __set__(self, obj, value):
+        obj._state[self.name] = value
+
 
 class FloatField(Field):
     to_py_factory = float
@@ -308,7 +389,7 @@ class DateTimeField(Field):
 
 
 class NumericField(Field):
-    
+
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, precision=10, scale=3):
         """
         precision: number of digits
@@ -321,13 +402,13 @@ class NumericField(Field):
     @staticmethod
     def to_py_factory(value):
          return Decimal(str(value))
-    
+
 
 class IntegerField(Field):
 
     to_py_factory = int
 
-    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, 
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False,
                  min_value=-2147483648, max_value=2147483647):
         super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
         try:
@@ -345,7 +426,7 @@ class IntegerField(Field):
 
 class StringField(Field):
     to_py_factory = str
-    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, 
+    def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False,
                  length=255, fixe_length=False):
         super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
         self.length = int(length)

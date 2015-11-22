@@ -96,6 +96,7 @@ class SQLTranslater:
             sql = "{name} VARCHAR({length}) {null}"
         return sql
 
+
 class MysqlTranslater(SQLTranslater):
     pass
 
