@@ -175,8 +175,6 @@ class MetaResource(type):
                         ForeignKey([e[0] for e in fk_names], resource.table_name(),
                                    [e[0] for e in resource._id_fields_names()])
                     )
-                    # TODO add sql alter table FK dans sqltranslater
-                    # TODO faire une fontion select et save dans RESOURCE
 
     @classmethod
     def _build_orm_layer(mcs):
@@ -273,14 +271,17 @@ class Query:
     def __init__(self, resource):
         self.resource = resource
         self.join_criteria = []
-        self.where_criteria = []
+        self.where_fields = []
+        self.where_values = []
 
     def join(self, resource, on=None):
         self.join_criteria.append((resource, on))
         return self
 
     def where(self, criteria):
-        self.where_criteria.append(criteria)
+        field, value = criteria
+        self.where_fields.append(field)
+        self.where_values.append(value)
         return self
 
     def __iter__(self):
@@ -288,12 +289,13 @@ class Query:
                        for field in self.resource._fields
                        if not isinstance(field, ComposedBy)]
 
-        cursor = type(self.resource).db.execute(
-            "SELECT {} FROM {}".format(
-             ', '.join(field_names),
-             self.resource.table_name())
-        );
+        sql = "SELECT {} FROM {}".format(
+            ', '.join(field_names), self.resource.table_name())
 
+        if self.where_fields:
+            sql += " WHERE {}".format(" AND ".join(self.where_fields))
+        
+        cursor = type(self.resource).db.execute(sql, self.where_values);
         return self.Cursor(cursor, self.resource, field_names)
 
 
@@ -349,7 +351,31 @@ class Resource(metaclass=MetaResource):
 
 
 class Field:
+
     to_py_factory = None
+
+    class Condition:
+        def __init__(self, field_name):
+            self._field_name = field_name
+
+        def __eq__(self, value):
+            return '{} = ?'.format(self._field_name), value
+
+        def __ne__(self, value):
+            return '{} != ?'.format(self._field_name), value
+
+        def __lt__(self, value):
+            return '{} < ?'.format(self._field_name), value
+
+        def __le__(self, value):
+            return '{} <= ?'.format(self._field_name), value
+
+        def __gt__(self, value):
+            return '{} > ?'.format(self._field_name), value
+
+        def __ge__(self, value):
+            return '{} >= ?'.format(self._field_name), value
+
 
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False):
         self.unique = unique
@@ -366,6 +392,9 @@ class Field:
         return 'NOT NULL'
 
     def __get__(self, obj, cls=None):
+        if obj is None:
+            return self.Condition(
+                '{}.{}'.format(cls.table_name(), self.name))
         return self.to_py_factory(obj._state[self.name])
 
     def __set__(self, obj, value):
@@ -454,6 +483,18 @@ class ComposedBy(Field):
 
         if self.related_name is None:
             self.related_name = to_underscore(other_resource) + '_ref'
+
+    def __get__(self, obj, cls=None):
+        resource = MetaResource.register[self.other_resource][0]
+        query = resource.select()
+        for field in obj._id_fields_names():
+            query.where(
+                getattr(resource, obj.table_name() + '_' + field[0]) == getattr(obj, field[0])
+            )
+        return query
+
+    def __set__(self, obj, value):
+        obj._state[self.name] = value
 
 
 class ResourceField(Field):
