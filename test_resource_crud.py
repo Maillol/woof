@@ -22,7 +22,7 @@ class TestCrud(unittest.TestCase):
 
         cls.Hotel = Hotel
         cls.Room = Room
-        MetaResource.initialize('sqlite', ':memory:')
+        MetaResource.initialize('sqlite', ':memory:', isolation_level=None)
         MetaResource.create_tables()
 
     def test_01_create_hotel(self):
@@ -77,7 +77,13 @@ class TestCrud(unittest.TestCase):
             'SELECT hotel_id, number, bed_count FROM room;').fetchall()
         self.assertEqual(result, [(1, 1, 3), (1, 2, 2), (2, 1, 1), (2, 2, 4)])
 
-    def test_05_get_room_from_hotel(self):
+    def test_05_create_room_raise_integrity_error(self):
+        with self.assertRaises(IntegrityError):
+            self.Room(hotel_id=1, number=1, bed_count=3).save()
+        with self.assertRaises(IntegrityError):
+            self.Room(hotel_id=456, number=1, bed_count=3).save()
+
+    def test_06_get_room_from_hotel(self):
         hotels = list(self.Hotel.select())
         rooms = list(hotels[0].rooms)
         self.assertEqual(rooms[0].bed_count, 3)
@@ -86,3 +92,4 @@ class TestCrud(unittest.TestCase):
         rooms = list(hotels[1].rooms)
         self.assertEqual(rooms[0].bed_count, 1)
         self.assertEqual(rooms[1].bed_count, 4)
+

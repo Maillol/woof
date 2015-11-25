@@ -4,16 +4,24 @@ import datetime
 from sqltranslater import *
 from collections import OrderedDict
 
+
+class IntegrityError(Exception):
+    pass
+
+
 class DataBase:
     def __init__(self):
         self.connector = None
         self.provider = None
         self.connect_args = None
         self.sql_translater = None
+        self.integrity_error = None
 
     def initialize(self, database):
         if database == 'sqlite':
-            import sqlite3 as connector
+            import sqlite3
+            connector = sqlite3.connect
+            self.integrity_error = sqlite3.IntegrityError
             self.sql_translater = SqliteTranslater
 
         elif database == 'mysql':
@@ -32,13 +40,15 @@ class DataBase:
         self.provider = database
         self.connector = connector
 
-    def connect(self, *args):
+    def connect(self, *args, **kwargs):
         self.connect_args = args
-        self.cursor = self.connector.connect(*args)
+        self.cursor = self.connector(*args, **kwargs)
 
     def execute(self, sql_query, parameters=()):
-        return self.cursor.execute(sql_query, parameters)
-
+        try:
+            return self.cursor.execute(sql_query, parameters)
+        except self.integrity_error as error:
+            raise IntegrityError(error.args[0])
 
 def to_underscore(name):
     """
@@ -222,18 +232,20 @@ class MetaResource(type):
             resources_names = list(mcs.register)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            mcs.db.execute(mcs.db.sql_translater.translate(resource))
+            sql = mcs.db.sql_translater.translate(resource)
+            mcs.db.execute(sql)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            mcs.db.execute(mcs.db.sql_translater.translate_fk(resource))
+            for sql in mcs.db.sql_translater.translate_fk(resource):
+                mcs.db.execute(sql)
 
     @classmethod
-    def initialize(mcs, database, host):
+    def initialize(mcs, database, *args, **kwargs):
         mcs._build_foreign_key()
         mcs._build_orm_layer()
         mcs._name_to_ref()
         mcs.db.initialize(database)
-        mcs.db.connect(host)
+        mcs.db.connect(*args, **kwargs)
 
     @classmethod
     def clear(mcs):
@@ -517,4 +529,4 @@ class ResourceField(Field):
 
 
 __all__= ['NumericField', 'ResourceField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
-          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField']
+          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError']

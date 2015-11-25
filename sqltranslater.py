@@ -22,10 +22,9 @@ class SQLTranslater:
 
     @classmethod
     def translate_fk(cls, resource):
-        return '\n'.join(
-            cls.foreign_key(constrainte, resource)
-            for constrainte in resource.Meta.constraints
-            if isinstance(constrainte, resource2.ForeignKey))
+        return (cls.foreign_key(constrainte, resource)
+                for constrainte in resource.Meta.constraints
+                if isinstance(constrainte, resource2.ForeignKey))
 
     @classmethod
     def foreign_key(cls, fk, resource):
@@ -102,9 +101,56 @@ class MysqlTranslater(SQLTranslater):
 
 
 class SqliteTranslater(SQLTranslater):
+
     @classmethod
     def translate_fk(cls, resource):
-        return ';'
+        sql = []
+        for constrainte in resource.Meta.constraints:
+            if isinstance(constrainte, resource2.ForeignKey):
+                sql.extend(cls.foreign_key(constrainte, resource))
+        return sql
+
+    @classmethod
+    def foreign_key(cls, fk, resource):
+        table = resource.table_name()
+        fields = ", ".join(fk.fields)
+        referenced_fields = ", ".join(fk.referenced_fields)
+        referenced_table = fk.referenced_resource
+
+        where_clause = " AND ".join(
+            "{}.{} == NEW.{}".format(referenced_table, ref_field, field)
+            for field, ref_field in zip(fk.fields, fk.referenced_fields))
+
+        return (
+            "CREATE TRIGGER {table}_fk_on_insert "
+            "BEFORE INSERT ON {table} "
+            "FOR EACH ROW "
+            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
+            "BEGIN "
+            "SELECT RAISE (ROLLBACK, "
+            "'Foreign key mismatch: Value inserted into the {table} column ({fields}) "
+            "does not correspond to row in the {referenced_table} table'); "
+            "END;".format(**locals()),
+
+            "CREATE TRIGGER {table}_fk_on_update "
+            "BEFORE UPDATE ON {table} "
+            "FOR EACH ROW "
+            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
+            "BEGIN "
+            "SELECT RAISE (ROLLBACK, "
+            "'Foreign key mismatch: Value updated into the {table} column ({fields}) "
+            "does not correspond to row in the {referenced_table} table'); "
+            "END;".format(**locals()),
+
+            "CREATE TRIGGER {table}_fk_on_delete "
+            "BEFORE DELETE ON {table} "
+            "FOR EACH ROW "
+            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NOT NULL "
+            "BEGIN "
+            "SELECT RAISE (ROLLBACK, "
+            "'Foreign key mismatch: Value deleted into the {table} column ({fields}) "
+            "correspond to row in the {referenced_table} table'); "
+            "END;".format(**locals()))
 
 
 class PostgresTranslater(SQLTranslater):
