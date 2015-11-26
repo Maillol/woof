@@ -279,21 +279,17 @@ class Query:
                 raise StopIteration()
             return self._resource(**dict(zip(self._field_names, values)))
 
-
     def __init__(self, resource):
         self.resource = resource
         self.join_criteria = []
-        self.where_fields = []
-        self.where_values = []
+        self.where_criteria = None
 
     def join(self, resource, on=None):
-        self.join_criteria.append((resource, on))
+        self.join_criteria.append((resource, on.sql))
         return self
 
     def where(self, criteria):
-        field, value = criteria
-        self.where_fields.append(field)
-        self.where_values.append(value)
+        self.where_criteria = criteria
         return self
 
     def __iter__(self):
@@ -304,10 +300,15 @@ class Query:
         sql = "SELECT {} FROM {}".format(
             ', '.join(field_names), self.resource.table_name())
 
-        if self.where_fields:
-            sql += " WHERE {}".format(" AND ".join(self.where_fields))
-        
-        cursor = type(self.resource).db.execute(sql, self.where_values);
+        for resource, criteria in self.join_criteria:
+            sql += " INNER JOIN {} ON {}".format(resource.table_name(), criteria)
+
+        user_input = ()
+        if self.where_criteria:
+            sql += " WHERE {}".format(self.where_criteria.sql)
+            user_input = self.where_criteria.user_input
+
+        cursor = type(self.resource).db.execute(sql, user_input);
         return self.Cursor(cursor, self.resource, field_names)
 
 
@@ -362,32 +363,84 @@ class Resource(metaclass=MetaResource):
         type(type(self)).db.execute(query, values)
 
 
+class Condition(object):
+    def __init__(self, sql):
+        self.sql = sql
+        self.user_input = []
+
+    def __or__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "({} or {})".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+            return self
+
+    def __and__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "({} and {})".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+            return self
+
+    def __eq__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} == {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} == ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __ne__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} != {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} != ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __gt__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} > {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} > ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __lt__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} < {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} < ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __le__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} <= {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} <= ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __ge__(self, other):
+        if isinstance(other, Condition):
+            self.sql = "{} >= {}".format(self.sql, other.sql)
+            self.user_input.extend(other.user_input)
+        else:
+            self.sql = "{} >= ?".format(self.sql)
+            self.user_input.append(other)
+        return self
+
+    def __repr__(self):
+        return 'Condition({})'.format(repr(self.sql))
+
+
 class Field:
 
     to_py_factory = None
-
-    class Condition:
-        def __init__(self, field_name):
-            self._field_name = field_name
-
-        def __eq__(self, value):
-            return '{} = ?'.format(self._field_name), value
-
-        def __ne__(self, value):
-            return '{} != ?'.format(self._field_name), value
-
-        def __lt__(self, value):
-            return '{} < ?'.format(self._field_name), value
-
-        def __le__(self, value):
-            return '{} <= ?'.format(self._field_name), value
-
-        def __gt__(self, value):
-            return '{} > ?'.format(self._field_name), value
-
-        def __ge__(self, value):
-            return '{} >= ?'.format(self._field_name), value
-
 
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False):
         self.unique = unique
@@ -405,7 +458,7 @@ class Field:
 
     def __get__(self, obj, cls=None):
         if obj is None:
-            return self.Condition(
+            return Condition(
                 '{}.{}'.format(cls.table_name(), self.name))
         return self.to_py_factory(obj._state[self.name])
 
@@ -499,10 +552,17 @@ class ComposedBy(Field):
     def __get__(self, obj, cls=None):
         resource = MetaResource.register[self.other_resource][0]
         query = resource.select()
-        for field in obj._id_fields_names():
-            query.where(
-                getattr(resource, obj.table_name() + '_' + field[0]) == getattr(obj, field[0])
-            )
+
+        fields_name = obj._id_fields_names()        
+        field = fields_name[0]
+        clause_where = (getattr(resource, obj.table_name() + '_' + field[0]) 
+                        == getattr(obj, field[0]))
+
+        for field in obj._id_fields_names()[1:]:
+            clause_where = clause_where & (
+                getattr(resource, obj.table_name() + '_' + field[0]) == getattr(obj, field[0]))
+
+        query.where(clause_where)
         return query
 
     def __set__(self, obj, value):

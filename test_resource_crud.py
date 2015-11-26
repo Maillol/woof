@@ -61,8 +61,8 @@ class TestCrud(unittest.TestCase):
         self.assertEqual(hotels[0].id, 1)
 
         hotels = list(self.Hotel.select().where(
-            self.Hotel.name == 'Tokio Hotel').where(
-            self.Hotel.address == '125 main street'))
+            (self.Hotel.name == 'Tokio Hotel') & 
+            (self.Hotel.address == '125 main street')))
 
         self.assertEqual(len(hotels), 1)
         self.assertEqual(hotels[0].id, 2)
