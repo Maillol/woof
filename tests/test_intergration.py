@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-import unittest
-from imp import reload
-
+import sys
 import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__))))
+
+import unittest
 from tempfile import TemporaryDirectory
 import json
 
-from url_parser import path_to_sql
-from resource2 import *
-from msf import RESTServer
+from msf.url_parser import path_to_sql
+from msf.resource import *
+from msf.msf import RESTServer
 import peewee
 
 

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 import unittest
-from resource2 import *
-import resource2
+from msf.resource import *
+import msf.resource
 from datetime import date
 from decimal import Decimal
 

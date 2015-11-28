@@ -1,7 +1,10 @@
 from functools import partial
 from decimal import Decimal
 import datetime
-from sqltranslater import *
+from .sqltranslater import (MysqlTranslater,
+                            SqliteTranslater,
+                            PostgresTranslater)
+
 from collections import OrderedDict
 
 
@@ -23,16 +26,19 @@ class DataBase:
             connector = sqlite3.connect
             self.integrity_error = sqlite3.IntegrityError
             self.sql_translater = SqliteTranslater
+            Condition.substitution = '?'
 
         elif database == 'mysql':
             #  mysql -u root -p ;create database msf
             import pymysql
             connector = pymysql.connect # (host='localhost', password="pwd", user='root', db='msf')
             self.sql_translater = MysqlTranslater
+            Condition.substitution = '%s'
 
         elif database == 'postgres':
             from pyPgSQL import PgSQL as connector
             self.sql_translater = PostgresTranslater
+            Condition.substitution = '%s'
 
         else:
             raise ValueError('initialize parameter must be on of "sqlite", "mysql", "postgres"')
@@ -121,7 +127,7 @@ class MetaResource(type):
             meta.primary_key = id_fields
             meta.weak_id = weak_id_fields
             if not hasattr(meta, 'constraints'):
-                meta.constraints = []
+                meta.constraints = {'pks': None, 'fks': []}
             cls.Meta = meta
 
     @classmethod
@@ -169,8 +175,7 @@ class MetaResource(type):
                 make_id_if_not_exist(resource)
 
         for resource_name, resource in MetaResource._starting_block.items():
-            resource.Meta.constraints.append(
-                PrimaryKey([e[0] for e in resource._id_fields_names()]))
+            resource.Meta.constraints['pks'] = PrimaryKey([e[0] for e in resource._id_fields_names()])
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     other_resource = MetaResource._starting_block[field.other_resource]
@@ -181,7 +186,7 @@ class MetaResource(type):
                     for fk_name, fk_field in fk_names:
                         add_field(other_resource, fk_name, type(fk_field)())
 
-                    other_resource.Meta.constraints.append(
+                    other_resource.Meta.constraints['fks'].append(
                         ForeignKey([e[0] for e in fk_names], resource.table_name(),
                                    [e[0] for e in resource._id_fields_names()])
                     )
@@ -232,11 +237,16 @@ class MetaResource(type):
             resources_names = list(mcs.register)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            sql = mcs.db.sql_translater.translate(resource)
+            sql = mcs.db.sql_translater.create_schema(
+                resource.table_name(),
+                resource.Meta.constraints['pks'],
+                (field for field in resource._fields if not isinstance(field, ComposedBy))
+            )
             mcs.db.execute(sql)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            for sql in mcs.db.sql_translater.translate_fk(resource):
+            for sql in mcs.db.sql_translater.create_schema_constraints(
+                resource.table_name(), resource.Meta.constraints['fks']):
                 mcs.db.execute(sql)
 
     @classmethod
@@ -305,7 +315,7 @@ class Query:
 
         user_input = ()
         if self.where_criteria:
-            sql += " WHERE {}".format(self.where_criteria.sql)
+            sql += " WHERE {}".format(' '.join(self.where_criteria.sql))
             user_input = self.where_criteria.user_input
 
         cursor = type(self.resource).db.execute(sql, user_input);
@@ -356,86 +366,76 @@ class Resource(metaclass=MetaResource):
             fields.append(field)
             values.append(value)
 
-        query = ('INSERT INTO {} ({}) VALUES ({});'
-                 .format(self.table_name(),
-                         ', '.join(fields),
-                         ','.join('?' * len(fields))))
-        type(type(self)).db.execute(query, values)
+        db = type(type(self)).db
+        sql = db.sql_translater.save(self.table_name(), fields)
+        db.execute(sql, values)
 
 
 class Condition(object):
+    substitution = '?'
+
     def __init__(self, sql):
-        self.sql = sql
+        self.sql = [sql]
         self.user_input = []
 
     def __or__(self, other):
         if isinstance(other, Condition):
-            self.sql = "({} or {})".format(self.sql, other.sql)
+            self.sql.insert(0, '(')
+            self.sql.append("OR")
+            self.sql.extend(other.sql)
+            self.sql.append(")")
             self.user_input.extend(other.user_input)
             return self
 
     def __and__(self, other):
         if isinstance(other, Condition):
-            self.sql = "({} and {})".format(self.sql, other.sql)
+            self.sql.insert(0, '(')
+            self.sql.append("AND")
+            self.sql.extend(other.sql)
+            self.sql.append(")")
             self.user_input.extend(other.user_input)
             return self
 
-    def __eq__(self, other):
+    def _update(self, other):
         if isinstance(other, Condition):
-            self.sql = "{} == {}".format(self.sql, other.sql)
+            self.sql.extend(other.sql)
             self.user_input.extend(other.user_input)
         else:
-            self.sql = "{} == ?".format(self.sql)
+            self.sql.append(self.substitution)
             self.user_input.append(other)
+
+    def __eq__(self, other):
+        self.sql.append("==")
+        self._update(other)
         return self
 
     def __ne__(self, other):
-        if isinstance(other, Condition):
-            self.sql = "{} != {}".format(self.sql, other.sql)
-            self.user_input.extend(other.user_input)
-        else:
-            self.sql = "{} != ?".format(self.sql)
-            self.user_input.append(other)
+        self.sql.append("!=")
+        self._update(other)
         return self
 
     def __gt__(self, other):
-        if isinstance(other, Condition):
-            self.sql = "{} > {}".format(self.sql, other.sql)
-            self.user_input.extend(other.user_input)
-        else:
-            self.sql = "{} > ?".format(self.sql)
-            self.user_input.append(other)
+        self.sql.append(">")
+        self._update(other)
         return self
 
     def __lt__(self, other):
-        if isinstance(other, Condition):
-            self.sql = "{} < {}".format(self.sql, other.sql)
-            self.user_input.extend(other.user_input)
-        else:
-            self.sql = "{} < ?".format(self.sql)
-            self.user_input.append(other)
+        self.sql.append("<")
+        self._update(other)
         return self
 
     def __le__(self, other):
-        if isinstance(other, Condition):
-            self.sql = "{} <= {}".format(self.sql, other.sql)
-            self.user_input.extend(other.user_input)
-        else:
-            self.sql = "{} <= ?".format(self.sql)
-            self.user_input.append(other)
+        self.sql.append("<=")
+        self._update(other)
         return self
 
     def __ge__(self, other):
-        if isinstance(other, Condition):
-            self.sql = "{} >= {}".format(self.sql, other.sql)
-            self.user_input.extend(other.user_input)
-        else:
-            self.sql = "{} >= ?".format(self.sql)
-            self.user_input.append(other)
+        self.sql.append(">=")
+        self._update(other)
         return self
 
     def __repr__(self):
-        return 'Condition({})'.format(repr(self.sql))
+        return 'Condition({})'.format(" ".join(self.sql))
 
 
 class Field:
@@ -449,12 +449,6 @@ class Field:
         self.readable = readable
         self.weak_id = weak_id
         self.primary_key = primary_key
-
-    @property
-    def null(self):
-        if self.nullable:
-            return 'NULL'
-        return 'NOT NULL'
 
     def __get__(self, obj, cls=None):
         if obj is None:
