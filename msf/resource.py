@@ -90,7 +90,7 @@ class MetaResource(type):
     """
     Store resource and relationship between several resource throug resource fields.
 
-    You can use MetaResource.register inorder to search ORM class using resource class Name.
+    You can use MetaResource.register in order to search ORM class using resource class Name.
     """
 
     db = DataBase()
@@ -101,34 +101,45 @@ class MetaResource(type):
 
     _starting_block = {}
 
+    def _init_nested_meta(cls):
+        """
+        Initializes nested class in Resource class.
+
+            Meta:
+                weak_id = []
+                primary_key = [] # used by _id_fields_names method
+                constraints = {'pk': None, # A PrimaryKey object
+                               'fks': []}
+
+        """
+        if not hasattr(cls, 'Meta'):
+            cls.Meta = type('Meta', (), {})
+        if not hasattr(cls.Meta, 'constraints'):
+            cls.Meta.constraints = {}
+        cls.Meta.constraints.setdefault('pk', None)
+        cls.Meta.constraints.setdefault('fks', [])
+        if not hasattr(cls.Meta, 'primary_key'):
+            cls.Meta.primary_key = []
+        if not hasattr(cls.Meta, 'weak_id'):
+            cls.Meta.weak_id = []
+
     def __init__(cls, name, parent, attrs):
         if name != 'Resource':
-            cls._fields = []
-            id_fields = []
-            weak_id_fields = []
             MetaResource._starting_block[name] = cls
+            cls._init_nested_meta()
+            cls._table_name = to_underscore(cls.__name__)
+            cls._fields = []
             for field_name, field in attrs.items():
                 if isinstance(field, Field):
                     field.name = field_name
                     cls._fields.append(field)
                     if field.primary_key:
-                        id_fields.append(field)
+                        cls.Meta.primary_key.append(field)
                     if field.weak_id:
-                        weak_id_fields.append(field)
+                        cls.Meta.weak_id.append(field)
 
-            meta = attrs.setdefault('Meta', type('Meta', (), {}))
-            if weak_id_fields and id_fields:
+            if cls.Meta.weak_id and cls.Meta.primary_key:
                 raise TypeError("Resource with primary_key cannot have weak_id")
-            #elif not (weak_id_fields or id_fields):
-            #    cls.id = IntegerField(primary_key=True)
-            #    cls.id.name = 'id'
-            #    id_fields.append(cls.id)
-
-            meta.primary_key = id_fields
-            meta.weak_id = weak_id_fields
-            if not hasattr(meta, 'constraints'):
-                meta.constraints = {'pks': None, 'fks': []}
-            cls.Meta = meta
 
     @classmethod
     def __prepare__(self, cls, bases):
@@ -137,6 +148,19 @@ class MetaResource(type):
     # FIXME _build_foreign_key must raise error when Resource has weak_id without be referenced by an other resource
     @classmethod
     def _build_foreign_key(mcs):
+
+        def get_id_fields_names(cls):
+            if cls.Meta.primary_key:
+                return [(field.name, field) for field in cls.Meta.primary_key]
+            else:
+                prefix = cls.Meta.referenced_by._table_name
+                fields = [(field.name, field) for field in cls.Meta.weak_id]
+                fields.extend(
+                    ('{}_{}'.format(prefix, field_name), field)
+                    for (field_name, field)
+                    in get_id_fields_names(cls.Meta.referenced_by)
+                )
+                return fields
 
         def add_field(resource, name, field, position=None):
             if position is None:
@@ -174,21 +198,25 @@ class MetaResource(type):
             if not resource.Meta.weak_id:
                 make_id_if_not_exist(resource)
 
+        # Set _id_fields_name
+        for resource in MetaResource._starting_block.values():
+            resource._id_fields_names = get_id_fields_names(resource)
+
         for resource_name, resource in MetaResource._starting_block.items():
-            resource.Meta.constraints['pks'] = PrimaryKey([e[0] for e in resource._id_fields_names()])
+            resource.Meta.constraints['pk'] = PrimaryKey([e[0] for e in resource._id_fields_names])
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     other_resource = MetaResource._starting_block[field.other_resource]
-                    id_names = other_resource._id_fields_names()
+                    id_names = other_resource._id_fields_names
                     fk_names = id_names[len(other_resource.Meta.weak_id):]
-                    ref_id = resource._id_fields_names()
+                    ref_id = resource._id_fields_names
 
                     for fk_name, fk_field in fk_names:
                         add_field(other_resource, fk_name, type(fk_field)())
 
                     other_resource.Meta.constraints['fks'].append(
-                        ForeignKey([e[0] for e in fk_names], resource.table_name(),
-                                   [e[0] for e in resource._id_fields_names()])
+                        ForeignKey([e[0] for e in fk_names], resource._table_name,
+                                   [e[0] for e in resource._id_fields_names])
                     )
 
     @classmethod
@@ -238,15 +266,15 @@ class MetaResource(type):
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
             sql = mcs.db.sql_translater.create_schema(
-                resource.table_name(),
-                resource.Meta.constraints['pks'],
+                resource._table_name,
+                resource.Meta.constraints['pk'],
                 (field for field in resource._fields if not isinstance(field, ComposedBy))
             )
             mcs.db.execute(sql)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
             for sql in mcs.db.sql_translater.create_schema_constraints(
-                resource.table_name(), resource.Meta.constraints['fks']):
+                resource._table_name, resource.Meta.constraints['fks']):
                 mcs.db.execute(sql)
 
     @classmethod
@@ -264,6 +292,8 @@ class MetaResource(type):
         mcs._resource_fields = []
         mcs._starting_block = {}
 
+class Association:
+    pass
 
 class PrimaryKey:
     def __init__(self, fields):
@@ -308,10 +338,10 @@ class Query:
                        if not isinstance(field, ComposedBy)]
 
         sql = "SELECT {} FROM {}".format(
-            ', '.join(field_names), self.resource.table_name())
+            ', '.join(field_names), self.resource._table_name)
 
         for resource, criteria in self.join_criteria:
-            sql += " INNER JOIN {} ON {}".format(resource.table_name(), criteria)
+            sql += " INNER JOIN {} ON {}".format(resource._table_name, criteria)
 
         user_input = ()
         if self.where_criteria:
@@ -339,23 +369,6 @@ class Resource(metaclass=MetaResource):
             setattr(self, field_name, kwargs[field_name])
 
     @classmethod
-    def table_name(cls):
-        return to_underscore(cls.__name__)
-
-    @classmethod
-    def _id_fields_names(cls):
-        if cls.Meta.primary_key:
-            return [(field.name, field) for field in cls.Meta.primary_key]
-        else:
-            prefix = cls.Meta.referenced_by.table_name()
-            fields = [(field.name, field) for field in cls.Meta.weak_id]
-            fields.extend(
-                ('{}_{}'.format(prefix, field_name), field)
-                for (field_name, field) in cls.Meta.referenced_by._id_fields_names()
-            )
-            return fields
-
-    @classmethod
     def select(cls, **kwargs):
         return Query(cls)
 
@@ -367,7 +380,7 @@ class Resource(metaclass=MetaResource):
             values.append(value)
 
         db = type(type(self)).db
-        sql = db.sql_translater.save(self.table_name(), fields)
+        sql = db.sql_translater.save(self._table_name, fields)
         db.execute(sql, values)
 
 
@@ -453,7 +466,7 @@ class Field:
     def __get__(self, obj, cls=None):
         if obj is None:
             return Condition(
-                '{}.{}'.format(cls.table_name(), self.name))
+                '{}.{}'.format(cls._table_name, self.name))
         return self.to_py_factory(obj._state[self.name])
 
     def __set__(self, obj, value):
@@ -512,6 +525,7 @@ class IntegerField(Field):
         if (self.min_value >= max_value):
             raise ValueError('max_value must be greater than min_value')
 
+
 class StringField(Field):
     to_py_factory = str
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False,
@@ -547,14 +561,14 @@ class ComposedBy(Field):
         resource = MetaResource.register[self.other_resource][0]
         query = resource.select()
 
-        fields_name = obj._id_fields_names()        
+        fields_name = obj._id_fields_names
         field = fields_name[0]
-        clause_where = (getattr(resource, obj.table_name() + '_' + field[0]) 
+        clause_where = (getattr(resource, obj._table_name + '_' + field[0])
                         == getattr(obj, field[0]))
 
-        for field in obj._id_fields_names()[1:]:
+        for field in obj._id_fields_names[1:]:
             clause_where = clause_where & (
-                getattr(resource, obj.table_name() + '_' + field[0]) == getattr(obj, field[0]))
+                getattr(resource, obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
 
         query.where(clause_where)
         return query
