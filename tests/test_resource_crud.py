@@ -24,8 +24,23 @@ class TestCrud(unittest.TestCase):
             number = IntegerField(weak_id=True)
             bed_count = IntegerField()
 
+        class Person(Resource):
+            first_name = StringField()
+            last_name = StringField()
+
+        @association(
+            Person='0..n',
+            Room='0..n'
+        )
+        class Rent(Resource):
+            date = DateField(primary_key=True)
+            nb_night = IntegerField()
+
         cls.Hotel = Hotel
         cls.Room = Room
+        cls.Person = Person
+        cls.Rent = Rent
+
         MetaResource.initialize('sqlite', ':memory:', isolation_level=None)
         MetaResource.create_tables()
 

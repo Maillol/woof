@@ -86,6 +86,15 @@ def to_underscore(name):
     return "".join(out)
 
 
+def association(**resources):
+    def decorator(cls):
+        cls._init_nested_meta()
+        cls.Meta.referenced_by = list(resources)
+        # TODO add cls.Meta.primary_key here ?
+        return cls
+    return decorator
+
+
 class MetaResource(type):
     """
     Store resource and relationship between several resource throug resource fields.
@@ -122,6 +131,9 @@ class MetaResource(type):
             cls.Meta.primary_key = []
         if not hasattr(cls.Meta, 'weak_id'):
             cls.Meta.weak_id = []
+        if not hasattr(cls.Meta, 'referenced_by'): # TODO change name for 'need_to_generate_pk'
+            cls.Meta.referenced_by = []
+
 
     def __init__(cls, name, parent, attrs):
         if name != 'Resource':
@@ -150,17 +162,31 @@ class MetaResource(type):
     def _build_foreign_key(mcs):
 
         def get_id_fields_names(cls):
-            if cls.Meta.primary_key:
-                return [(field.name, field) for field in cls.Meta.primary_key]
+            if cls.Meta.referenced_by:
+                if isinstance(cls.Meta.referenced_by[0], str):
+                    fields = [(field.name, field) for field in cls.Meta.primary_key]
+                    for required_cls_name in cls.Meta.referenced_by:
+                        required_cls = type(cls)._starting_block[required_cls_name]
+                        prefix = required_cls._table_name
+                        fields.extend(
+                            ('{}_{}'.format(prefix, field_name), field)
+                            for (field_name, field) 
+                            in get_id_fields_names(required_cls)
+                        )
+                    return fields
+
+                else: # TODO replace by if cls.Meta.wead_id ?
+                    fields = [(field.name, field) for field in cls.Meta.weak_id]                
+                    for required_cls in cls.Meta.referenced_by:
+                        prefix = required_cls._table_name
+                        fields.extend(
+                            ('{}_{}'.format(prefix, field_name), field)
+                            for (field_name, field)
+                            in get_id_fields_names(required_cls)
+                        )
+                    return fields
             else:
-                prefix = cls.Meta.referenced_by._table_name
-                fields = [(field.name, field) for field in cls.Meta.weak_id]
-                fields.extend(
-                    ('{}_{}'.format(prefix, field_name), field)
-                    for (field_name, field)
-                    in get_id_fields_names(cls.Meta.referenced_by)
-                )
-                return fields
+                return [(field.name, field) for field in cls.Meta.primary_key]
 
         def add_field(resource, name, field, position=None):
             if position is None:
@@ -191,7 +217,7 @@ class MetaResource(type):
                         raise TypeError(weak_entity +
                                         ' cannot have primary key because it is contained in ' + resource)
                     make_weak_id_if_not_exist(weak_entity)
-                    weak_entity.Meta.referenced_by = resource
+                    weak_entity.Meta.referenced_by = [resource]
 
         # Generate id
         for resource_name, resource in MetaResource._starting_block.items():
@@ -292,12 +318,11 @@ class MetaResource(type):
         mcs._resource_fields = []
         mcs._starting_block = {}
 
-class Association:
-    pass
 
 class PrimaryKey:
     def __init__(self, fields):
         self.fields = fields
+
 
 class ForeignKey:
     def __init__(self, fields, referenced_resource, referenced_fields):
@@ -597,4 +622,4 @@ class ResourceField(Field):
 
 
 __all__= ['NumericField', 'ResourceField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
-          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError']
+          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError', 'association']
