@@ -2,19 +2,19 @@
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 import unittest
-from msf.resource import *
-import msf.resource
 from datetime import date
-from decimal import Decimal
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from msf.resource import *
+
 
 class TestCrud(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         MetaResource.clear()
+
         class Hotel(Resource):
             name = StringField()
             address = StringField()
@@ -45,17 +45,17 @@ class TestCrud(unittest.TestCase):
         MetaResource.create_tables()
 
     def test_01_create_hotel(self):
-        hotel = self.Hotel(name="Hotel California", 
+        hotel = self.Hotel(name="Hotel California",
                            address="route de radis")
         hotel.save()
 
-        hotel = self.Hotel(name="Tokio Hotel", 
+        hotel = self.Hotel(name="Tokio Hotel",
                            address="125 main street")
         hotel.save()
 
         result = MetaResource.db.execute('SELECT * FROM hotel;').fetchall()
-        
-        self.assertEqual(result, 
+    
+        self.assertEqual(result,
                          [(1, 'Hotel California', 'route de radis'),
                           (2, 'Tokio Hotel', '125 main street')])
 
@@ -80,7 +80,7 @@ class TestCrud(unittest.TestCase):
         self.assertEqual(hotels[0].id, 1)
 
         hotels = list(self.Hotel.select().where(
-            (self.Hotel.name == 'Tokio Hotel') & 
+            (self.Hotel.name == 'Tokio Hotel') &
             (self.Hotel.address == '125 main street')))
 
         self.assertEqual(len(hotels), 1)
@@ -111,4 +111,101 @@ class TestCrud(unittest.TestCase):
         rooms = list(hotels[1].rooms)
         self.assertEqual(rooms[0].bed_count, 1)
         self.assertEqual(rooms[1].bed_count, 4)
+
+    def test_07_create_person(self):
+        self.Person(first_name='Claude', last_name='Monet').save()
+        self.Person(first_name='Vincent', last_name='Van Gogh').save()
+        result = MetaResource.db.execute(
+            'SELECT id, first_name, last_name FROM Person;').fetchall()
+        self.assertEqual(result, [(1, 'Claude', 'Monet'),
+                                  (2, 'Vincent', 'Van Gogh')])
+
+    def test_08_select_person(self):
+        persons = list(self.Person.select())
+        self.assertEqual(persons[0].first_name, 'Claude')
+        self.assertEqual(persons[0].last_name, 'Monet')
+        self.assertEqual(persons[1].first_name, 'Vincent')
+        self.assertEqual(persons[1].last_name, 'Van Gogh')
+
+    def test_09_person_rent_room(self):
+        self.Rent(
+            date=date(2015, 11, 3),
+            nb_night=4,
+            person_id=1,
+            room_hotel_id=1,
+            room_number=2).save()
+
+        self.Rent(
+            date=date(2015, 11, 4),
+            nb_night=14,
+            person_id=2,
+            room_hotel_id=2,
+            room_number=1).save()
+
+        result = MetaResource.db.execute(
+            'SELECT date, nb_night, person_id, room_hotel_id, room_number FROM Rent;').fetchall()
+        self.assertEqual(result, [('2015-11-03', 4, 1, 1, 2),
+                                  ('2015-11-04', 14, 2, 2, 1)])
+
+    def test_10_create_rent_raise_integrity_error(self):
+        with self.assertRaises(IntegrityError):
+            self.Rent(
+                date=date(2015, 11, 3),
+                nb_night=4,
+                person_id=1,
+                room_hotel_id=1,
+                room_number=2).save()
+
+        with self.assertRaises(IntegrityError):
+            self.Rent(
+                date=date(2018, 5, 19),
+                nb_night=23,
+                person_id=927,
+                room_hotel_id=1,
+                room_number=2).save()
+
+        with self.assertRaises(IntegrityError):
+            self.Rent(
+                date=date(2018, 5, 19),
+                nb_night=23,
+                person_id=1,
+                room_hotel_id=927,
+                room_number=2).save()
+
+        with self.assertRaises(IntegrityError):
+            self.Rent(
+                date=date(2018, 5, 19),
+                nb_night=23,
+                person_id=1,
+                room_hotel_id=1,
+                room_number=927).save()
+
+    def test_11_select_person_rent_room_using_join(self):
+        persons = list(
+            self.Person.select()
+            .join(self.Rent,
+                  on=self.Person.id == self.Rent.person_id)
+            .join(self.Room,
+                  on=(self.Room.hotel_id == self.Rent.room_hotel_id) &
+                     (self.Room.number == self.Rent.room_number))
+            .where((self.Room.hotel_id == 1) & (self.Room.number == 2))
+        )
+
+        self.assertEqual(len(persons), 1)
+        self.assertEqual(persons[0].first_name, 'Claude')
+        self.assertEqual(persons[0].last_name, 'Monet')
+
+        persons = list(
+            self.Person.select()
+            .join(self.Rent,
+                  on=self.Person.id == self.Rent.person_id)
+            .join(self.Room,
+                  on=(self.Room.hotel_id == self.Rent.room_hotel_id) &
+                     (self.Room.number == self.Rent.room_number))
+            .where(self.Room.bed_count == 1)
+        )
+
+        self.assertEqual(len(persons), 1)
+        self.assertEqual(persons[0].first_name, 'Vincent')
+        self.assertEqual(persons[0].last_name, 'Van Gogh')
 

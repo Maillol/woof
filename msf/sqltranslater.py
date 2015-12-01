@@ -129,7 +129,7 @@ class SqliteTranslater(SQLTranslater):
             for field, ref_field in zip(fk.fields, fk.referenced_fields))
 
         return (
-            "CREATE TRIGGER {table_name}_fk_on_insert "
+            "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_i "
             "BEFORE INSERT ON {table_name} "
             "FOR EACH ROW "
             "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
@@ -139,7 +139,7 @@ class SqliteTranslater(SQLTranslater):
             "does not correspond to row in the {referenced_table} table'); "
             "END;".format(**locals()),
 
-            "CREATE TRIGGER {table_name}_fk_on_update "
+            "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_u "
             "BEFORE UPDATE ON {table_name} "
             "FOR EACH ROW "
             "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
@@ -149,7 +149,7 @@ class SqliteTranslater(SQLTranslater):
             "does not correspond to row in the {referenced_table} table'); "
             "END;".format(**locals()),
 
-            "CREATE TRIGGER {table_name}_fk_on_delete "
+            "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_d "
             "BEFORE DELETE ON {table_name} "
             "FOR EACH ROW "
             "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NOT NULL "

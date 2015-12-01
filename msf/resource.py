@@ -1,4 +1,3 @@
-from functools import partial
 from decimal import Decimal
 import datetime
 from .sqltranslater import (MysqlTranslater,
@@ -56,6 +55,7 @@ class DataBase:
         except self.integrity_error as error:
             raise IntegrityError(error.args[0])
 
+
 def to_underscore(name):
     """
     >>> to_underscore("FooBar")
@@ -89,8 +89,8 @@ def to_underscore(name):
 def association(**resources):
     def decorator(cls):
         cls._init_nested_meta()
-        cls.Meta.referenced_by = list(resources)
-        # TODO add cls.Meta.primary_key here ?
+        cls.Meta.required_resource_for_pk = list(resources)
+        cls.Meta.association_meta_data = resources
         return cls
     return decorator
 
@@ -116,10 +116,11 @@ class MetaResource(type):
 
             Meta:
                 weak_id = []
-                primary_key = [] # used by _id_fields_names method
+                primary_key = [] # used by get_id_fields_names method
                 constraints = {'pk': None, # A PrimaryKey object
                                'fks': []}
-
+                required_resource_for_pk = []
+                association_meta_data = []
         """
         if not hasattr(cls, 'Meta'):
             cls.Meta = type('Meta', (), {})
@@ -131,9 +132,10 @@ class MetaResource(type):
             cls.Meta.primary_key = []
         if not hasattr(cls.Meta, 'weak_id'):
             cls.Meta.weak_id = []
-        if not hasattr(cls.Meta, 'referenced_by'): # TODO change name for 'need_to_generate_pk'
-            cls.Meta.referenced_by = []
-
+        if not hasattr(cls.Meta, 'required_resource_for_pk'):
+            cls.Meta.required_resource_for_pk = []
+        if not hasattr(cls.Meta, 'association_meta_data'):
+            cls.Meta.association_meta_data = []
 
     def __init__(cls, name, parent, attrs):
         if name != 'Resource':
@@ -162,31 +164,30 @@ class MetaResource(type):
     def _build_foreign_key(mcs):
 
         def get_id_fields_names(cls):
-            if cls.Meta.referenced_by:
-                if isinstance(cls.Meta.referenced_by[0], str):
-                    fields = [(field.name, field) for field in cls.Meta.primary_key]
-                    for required_cls_name in cls.Meta.referenced_by:
-                        required_cls = type(cls)._starting_block[required_cls_name]
-                        prefix = required_cls._table_name
-                        fields.extend(
-                            ('{}_{}'.format(prefix, field_name), field)
-                            for (field_name, field) 
-                            in get_id_fields_names(required_cls)
-                        )
-                    return fields
+            if cls.Meta.weak_id:
+                fields = [(field.name, field) for field in cls.Meta.weak_id]
+                for required_cls in cls.Meta.required_resource_for_pk:
+                    prefix = required_cls._table_name
+                    fields.extend(
+                        ('{}_{}'.format(prefix, field_name), field)
+                        for (field_name, field)
+                        in get_id_fields_names(required_cls)
+                    )
+                return fields
 
-                else: # TODO replace by if cls.Meta.wead_id ?
-                    fields = [(field.name, field) for field in cls.Meta.weak_id]                
-                    for required_cls in cls.Meta.referenced_by:
-                        prefix = required_cls._table_name
-                        fields.extend(
-                            ('{}_{}'.format(prefix, field_name), field)
-                            for (field_name, field)
-                            in get_id_fields_names(required_cls)
-                        )
-                    return fields
-            else:
-                return [(field.name, field) for field in cls.Meta.primary_key]
+            if cls.Meta.required_resource_for_pk:
+                fields = [(field.name, field) for field in cls.Meta.primary_key]
+                for required_cls_name in cls.Meta.required_resource_for_pk:
+                    required_cls = type(cls)._starting_block[required_cls_name]
+                    prefix = required_cls._table_name
+                    fields.extend(
+                        ('{}_{}'.format(prefix, field_name), field)
+                        for (field_name, field)
+                        in get_id_fields_names(required_cls)
+                    )
+                return fields
+
+            return [(field.name, field) for field in cls.Meta.primary_key]
 
         def add_field(resource, name, field, position=None):
             if position is None:
@@ -217,7 +218,7 @@ class MetaResource(type):
                         raise TypeError(weak_entity +
                                         ' cannot have primary key because it is contained in ' + resource)
                     make_weak_id_if_not_exist(weak_entity)
-                    weak_entity.Meta.referenced_by = [resource]
+                    weak_entity.Meta.required_resource_for_pk = [resource]
 
         # Generate id
         for resource_name, resource in MetaResource._starting_block.items():
@@ -227,15 +228,30 @@ class MetaResource(type):
         # Set _id_fields_name
         for resource in MetaResource._starting_block.values():
             resource._id_fields_names = get_id_fields_names(resource)
+            resource.Meta.constraints['pk'] = PrimaryKey([e[0] for e in resource._id_fields_names])
 
         for resource_name, resource in MetaResource._starting_block.items():
-            resource.Meta.constraints['pk'] = PrimaryKey([e[0] for e in resource._id_fields_names])
+            if resource.Meta.association_meta_data:
+                for other_resource_name, card in resource.Meta.association_meta_data.items():
+                    other_resource = MetaResource._starting_block[other_resource_name]
+
+                    fk_names = [('{}_{}'.format(other_resource._table_name, name), field)
+                                for name, field
+                                in other_resource._id_fields_names]
+
+                    for fk_name, fk_field in fk_names:
+                        add_field(resource, fk_name, type(fk_field)())
+
+                    resource.Meta.constraints['fks'].append(
+                        ForeignKey([e[0] for e in fk_names], other_resource._table_name,
+                                   [e[0] for e in other_resource._id_fields_names])
+                    )
+
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     other_resource = MetaResource._starting_block[field.other_resource]
                     id_names = other_resource._id_fields_names
                     fk_names = id_names[len(other_resource.Meta.weak_id):]
-                    ref_id = resource._id_fields_names
 
                     for fk_name, fk_field in fk_names:
                         add_field(other_resource, fk_name, type(fk_field)())
@@ -294,7 +310,7 @@ class MetaResource(type):
             sql = mcs.db.sql_translater.create_schema(
                 resource._table_name,
                 resource.Meta.constraints['pk'],
-                (field for field in resource._fields if not isinstance(field, ComposedBy))
+                (field for field in resource._fields if isinstance(field, ScalarField))
             )
             mcs.db.execute(sql)
         for resource_name in resources_names:
@@ -349,7 +365,7 @@ class Query:
         self.join_criteria = []
         self.where_criteria = None
 
-    def join(self, resource, on=None):
+    def join(self, resource, on):
         self.join_criteria.append((resource, on.sql))
         return self
 
@@ -360,20 +376,20 @@ class Query:
     def __iter__(self):
         field_names = [field.name
                        for field in self.resource._fields
-                       if not isinstance(field, ComposedBy)]
+                       if isinstance(field, ScalarField)]
 
         sql = "SELECT {} FROM {}".format(
             ', '.join(field_names), self.resource._table_name)
 
         for resource, criteria in self.join_criteria:
-            sql += " INNER JOIN {} ON {}".format(resource._table_name, criteria)
+            sql += " INNER JOIN {} ON {}".format(resource._table_name, " ".join(criteria))
 
         user_input = ()
         if self.where_criteria:
             sql += " WHERE {}".format(' '.join(self.where_criteria.sql))
             user_input = self.where_criteria.user_input
 
-        cursor = type(self.resource).db.execute(sql, user_input);
+        cursor = type(self.resource).db.execute(sql, user_input)
         return self.Cursor(cursor, self.resource, field_names)
 
 
@@ -387,7 +403,7 @@ class Resource(metaclass=MetaResource):
 
         if wrong_fields:
             raise TypeError("{}() got an unexpected keyword argument '{}'"
-                            .format(type(self.__name__),
+                            .format(type(self).__name__,
                                     next(iter(wrong_fields))))
 
         for field_name in got_fields:
@@ -498,23 +514,27 @@ class Field:
         obj._state[self.name] = value
 
 
-class FloatField(Field):
+class ScalarField(Field):
+    pass
+
+
+class FloatField(ScalarField):
     to_py_factory = float
 
 
-class BinaryField(Field):
+class BinaryField(ScalarField):
     to_py_factory = bytes
 
 
-class DateField(Field):
+class DateField(ScalarField):
     to_py_factory = datetime.date
 
 
-class DateTimeField(Field):
+class DateTimeField(ScalarField):
     to_py_factory = datetime.datetime
 
 
-class NumericField(Field):
+class NumericField(ScalarField):
 
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False, precision=10, scale=3):
         """
@@ -527,10 +547,10 @@ class NumericField(Field):
 
     @staticmethod
     def to_py_factory(value):
-         return Decimal(str(value))
+        return Decimal(str(value))
 
 
-class IntegerField(Field):
+class IntegerField(ScalarField):
 
     to_py_factory = int
 
@@ -547,12 +567,14 @@ class IntegerField(Field):
         except ValueError:
             raise TypeError('max_value must be an integer (got {})'.format(type(max_value)))
 
-        if (self.min_value >= max_value):
+        if self.min_value >= max_value:
             raise ValueError('max_value must be greater than min_value')
 
 
-class StringField(Field):
+class StringField(ScalarField):
+
     to_py_factory = str
+
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False,
                  length=255, fixe_length=False):
         super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
@@ -560,12 +582,36 @@ class StringField(Field):
         self.fixe_length = int(fixe_length)
 
 
+class ToAssociationField(Field):
+    def __init__(self, association):
+        self.association = association
+
+    def __get__(self, obj, cls=None):
+        query = self.association.select()
+
+        field_name = obj._id_fields_names[0][0]
+        related = getattr(self.association,
+                          obj._table_name + '_' + field_name)
+        local = getattr(type(obj), field_name)
+
+        join_criteria = related == local
+        where_criteria = local == getattr(obj, field_name)
+        for field_name, _ in obj._id_fields_names[1:]:
+            related = getattr(self.association,
+                              obj._table_name + '_' + field_name)
+            local = getattr(type(obj), field_name)
+            join_criteria &= (related == local)
+            where_criteria &= (local == getattr(obj, field_name))
+
+        return query.join(obj, on=join_criteria).where(where_criteria)
+
+
 class ComposedBy(Field):
     def __init__(self, other_resource, cardinality='0..*', related_name=None, writable=True, readable=True):
         if not isinstance(other_resource, str):
             raise TypeError('other_resource must be str (got {})'.format(type(other_resource)))
         if len(cardinality) == 4 and cardinality[1:3] == '..':
-            card_min, card_max =  cardinality.split('..')
+            card_min, card_max = cardinality.split('..')
         elif cardinality == '1':
             card_min = card_max = cardinality
         elif cardinality == '*':
@@ -573,7 +619,7 @@ class ComposedBy(Field):
         else:
             raise ValueError('cardinality must be one ("1", "0..1", "1..*", "*")')
 
-        super().__init__(writable, readable, card_max=="1", card_min=="0")
+        super().__init__(writable, readable, card_max == "1", card_min == "0")
         self.other_resource = other_resource
         self.related_name = related_name
         self.card_min = card_min
@@ -583,43 +629,24 @@ class ComposedBy(Field):
             self.related_name = to_underscore(other_resource) + '_ref'
 
     def __get__(self, obj, cls=None):
-        resource = MetaResource.register[self.other_resource][0]
-        query = resource.select()
+        other_resource = MetaResource.register[self.other_resource][0]
+        query = other_resource.select()
 
-        fields_name = obj._id_fields_names
-        field = fields_name[0]
-        clause_where = (getattr(resource, obj._table_name + '_' + field[0])
-                        == getattr(obj, field[0]))
+        field = obj._id_fields_names[0]
+        clause_where = (getattr(other_resource,
+                                obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
 
         for field in obj._id_fields_names[1:]:
-            clause_where = clause_where & (
-                getattr(resource, obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
+            clause_where &= (
+                getattr(other_resource, obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
 
         query.where(clause_where)
         return query
 
     def __set__(self, obj, value):
-        obj._state[self.name] = value
+        raise AttributeError("can't set attribute {}".format(self.name))
 
 
-class ResourceField(Field):
-    to_py_factory = int # FIXME must be resource_name primary_key
+__all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
+           'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError', 'association']
 
-    def __init__(self, resource_name, related_name=None, writable=True, readable=True, unique=False, nullable=False):
-        super().__init__(writable, readable, unique, nullable)
-        self.resource_proxy = peewee.Proxy()
-        self.type_field = partial(self.type_field,
-                                  self.resource_proxy, related_name=related_name)
-        self.resource_name = resource_name
-        self.related_name = related_name
-
-    def __repr__(self):
-        return '<ResourceField to %s>' % self.resource_name
-
-    @property
-    def referenced_resource(self):
-        MetaResource.register[self.related_name][0]
-
-
-__all__= ['NumericField', 'ResourceField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
-          'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError', 'association']
