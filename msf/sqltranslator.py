@@ -1,5 +1,5 @@
 
-class SQLTranslater:
+class SQLTranslator:
 
     @classmethod
     def create_schema(cls, table_name, primary_key, fields):
@@ -98,18 +98,30 @@ class SQLTranslater:
                 .format(table_name, ', '.join(field_names),
                         ','.join('%s' * len(field_names))))
 
+    @staticmethod
+    def delete(table_name, id_names):
+        where_criteria = " AND ".join(
+            "{} == %s".format(id_name) for id_name in id_names)
+        return "DELETE FROM {} WHERE {};".format(table_name, where_criteria)
 
-class MysqlTranslater(SQLTranslater):
+
+class MysqlTranslator(SQLTranslator):
     pass
 
 
-class SqliteTranslater(SQLTranslater):
+class SqliteTranslator(SQLTranslator):
 
     @staticmethod
     def save(table_name, field_names):
         return ('INSERT INTO {} ({}) VALUES ({});'
                 .format(table_name, ', '.join(field_names),
                         ','.join('?' * len(field_names))))
+
+    @staticmethod
+    def delete(table_name, id_names):
+        where_criteria = " AND ".join(
+            "{} == ?".format(id_name) for id_name in id_names)
+        return "DELETE FROM {} WHERE {};".format(table_name, where_criteria)
 
     @classmethod
     def create_schema_constraints(cls, table_name, foreign_keys):
@@ -127,6 +139,10 @@ class SqliteTranslater(SQLTranslater):
         where_clause = " AND ".join(
             "{}.{} == NEW.{}".format(referenced_table, ref_field, field)
             for field, ref_field in zip(fk.fields, fk.referenced_fields))
+
+        delete_where_clause = " AND ".join(
+            "{}.{} == OLD.{}".format(table_name, ref_field, field)
+            for field, ref_field in zip(fk.referenced_fields, fk.fields))
 
         return (
             "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_i "
@@ -150,17 +166,17 @@ class SqliteTranslater(SQLTranslater):
             "END;".format(**locals()),
 
             "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_d "
-            "BEFORE DELETE ON {table_name} "
+            "BEFORE DELETE ON {referenced_table} "
             "FOR EACH ROW "
-            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NOT NULL "
+            "WHEN (SELECT 1 FROM {table_name} WHERE {delete_where_clause}) IS NOT NULL "
             "BEGIN "
             "SELECT RAISE (ROLLBACK, "
-            "'Foreign key mismatch: Value deleted into the {table_name} column ({fields}) "
-            "correspond to row in the {referenced_table} table'); "
+            "'Foreign key mismatch: Value deleted into the {referenced_table} column ({fields}) "
+            "correspond to row in the {table_name} table'); "
             "END;".format(**locals()))
 
 
-class PostgresTranslater(SQLTranslater):
+class PostgresTranslator(SQLTranslator):
 
     @staticmethod
     def binary_field(field):

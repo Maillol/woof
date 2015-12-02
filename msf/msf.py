@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 #-*- coding:utf-8 -*-
 
-from playhouse.shortcuts import model_to_dict
 import json
 from urllib.parse import parse_qsl
-from functools import partial
-from resource2 import MetaResource
-from url_parser import path_to_sql, query_string_to_where_clause, select
+from .resource import MetaResource
+from .url_parser import path_to_sql, query_string_to_where_clause, select
 
 
 def parse_to_create(cls, extern, entity_conf):

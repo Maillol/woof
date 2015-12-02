@@ -1,10 +1,9 @@
-from decimal import Decimal
-import datetime
-from .sqltranslater import (MysqlTranslater,
-                            SqliteTranslater,
-                            PostgresTranslater)
-
 from collections import OrderedDict
+import datetime
+from decimal import Decimal
+from .sqltranslator import (MysqlTranslator,
+                            SqliteTranslator,
+                            PostgresTranslator)
 
 
 class IntegrityError(Exception):
@@ -16,7 +15,7 @@ class DataBase:
         self.connector = None
         self.provider = None
         self.connect_args = None
-        self.sql_translater = None
+        self.sql_translator = None
         self.integrity_error = None
 
     def initialize(self, database):
@@ -24,19 +23,19 @@ class DataBase:
             import sqlite3
             connector = sqlite3.connect
             self.integrity_error = sqlite3.IntegrityError
-            self.sql_translater = SqliteTranslater
+            self.sql_translator = SqliteTranslator
             Condition.substitution = '?'
 
         elif database == 'mysql':
             #  mysql -u root -p ;create database msf
             import pymysql
             connector = pymysql.connect # (host='localhost', password="pwd", user='root', db='msf')
-            self.sql_translater = MysqlTranslater
+            self.sql_translator = MysqlTranslator
             Condition.substitution = '%s'
 
         elif database == 'postgres':
             from pyPgSQL import PgSQL as connector
-            self.sql_translater = PostgresTranslater
+            self.sql_translator = PostgresTranslator
             Condition.substitution = '%s'
 
         else:
@@ -242,6 +241,12 @@ class MetaResource(type):
                     for fk_name, fk_field in fk_names:
                         add_field(resource, fk_name, type(fk_field)())
 
+                    setattr(other_resource, resource._table_name + '_set',
+                            ToAssociationField(resource))
+
+                    setattr(resource, other_resource._table_name + '_ref',
+                            FromAssociationField(other_resource))
+
                     resource.Meta.constraints['fks'].append(
                         ForeignKey([e[0] for e in fk_names], other_resource._table_name,
                                    [e[0] for e in other_resource._id_fields_names])
@@ -307,7 +312,7 @@ class MetaResource(type):
             resources_names = list(mcs.register)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            sql = mcs.db.sql_translater.create_schema(
+            sql = mcs.db.sql_translator.create_schema(
                 resource._table_name,
                 resource.Meta.constraints['pk'],
                 (field for field in resource._fields if isinstance(field, ScalarField))
@@ -315,7 +320,7 @@ class MetaResource(type):
             mcs.db.execute(sql)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
-            for sql in mcs.db.sql_translater.create_schema_constraints(
+            for sql in mcs.db.sql_translator.create_schema_constraints(
                 resource._table_name, resource.Meta.constraints['fks']):
                 mcs.db.execute(sql)
 
@@ -378,7 +383,7 @@ class Query:
                        for field in self.resource._fields
                        if isinstance(field, ScalarField)]
 
-        sql = "SELECT {} FROM {}".format(
+        sql = "SELECT DISTINCT {} FROM {}".format(
             ', '.join(field_names), self.resource._table_name)
 
         for resource, criteria in self.join_criteria:
@@ -421,7 +426,18 @@ class Resource(metaclass=MetaResource):
             values.append(value)
 
         db = type(type(self)).db
-        sql = db.sql_translater.save(self._table_name, fields)
+        sql = db.sql_translator.save(self._table_name, fields)
+        db.execute(sql, values)
+
+    def delete(self):
+        id_names = []
+        values = []
+        for field_name, _ in self._id_fields_names:
+            id_names.append(field_name)
+            values.append(self._state[field_name])
+
+        db = type(type(self)).db
+        sql = db.sql_translator.delete(self._table_name, id_names)
         db.execute(sql, values)
 
 
@@ -527,11 +543,15 @@ class BinaryField(ScalarField):
 
 
 class DateField(ScalarField):
-    to_py_factory = datetime.date
+    @staticmethod
+    def to_py_factory(value):
+        return datetime.datetime.strptime(value, '%Y-%m-%d').date()
 
 
 class DateTimeField(ScalarField):
-    to_py_factory = datetime.datetime
+    @staticmethod
+    def to_py_factory(value):
+        return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
 
 
 class NumericField(ScalarField):
@@ -583,6 +603,7 @@ class StringField(ScalarField):
 
 
 class ToAssociationField(Field):
+
     def __init__(self, association):
         self.association = association
 
@@ -604,6 +625,27 @@ class ToAssociationField(Field):
             where_criteria &= (local == getattr(obj, field_name))
 
         return query.join(obj, on=join_criteria).where(where_criteria)
+
+
+class FromAssociationField(Field):
+
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __get__(self, association, cls=None):
+        field_name = self.resource._id_fields_names[0][0]
+        association_field_value = getattr(
+            association, self.resource._table_name + '_' + field_name)
+        resource_field_name = getattr(self.resource, field_name)
+        where_criteria = resource_field_name == association_field_value
+
+        for field_name, _ in self.resource._id_fields_names[1:]:
+            association_field_value = getattr(
+                association, self.resource._table_name + '_' + field_name)
+            resource_field_name = getattr(self.resource, field_name)
+            where_criteria &= (resource_field_name == association_field_value)
+
+        return self.resource.select().where(where_criteria)
 
 
 class ComposedBy(Field):

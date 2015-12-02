@@ -209,3 +209,70 @@ class TestCrud(unittest.TestCase):
         self.assertEqual(persons[0].first_name, 'Vincent')
         self.assertEqual(persons[0].last_name, 'Van Gogh')
 
+    def test_12_select_rent_from_person(self):
+        person1, person2 = self.Person.select()
+        renting = list(person1.rent_set)
+        self.assertEqual(len(renting), 1)
+        self.assertEqual(renting[0].date, date(2015, 11, 3))
+        self.assertEqual(renting[0].nb_night, 4)
+
+        renting = list(person2.rent_set)
+        self.assertEqual(len(renting), 1)
+        self.assertEqual(renting[0].date, date(2015, 11, 4))
+        self.assertEqual(renting[0].nb_night, 14)
+
+    def test_13_select_room_from_person(self):
+        person1, person2 = self.Person.select()
+        renting = list(person1.rent_set)
+        room = list(renting[0].room_ref)[0]
+        self.assertEqual(room.bed_count, 2)
+
+        renting = list(person2.rent_set)
+        room = list(renting[0].room_ref)[0]
+        self.assertEqual(room.bed_count, 1)
+
+    def test_14_delete_persons_raise_integrity_error(self):
+        person1, person2 = self.Person.select()
+        with self.assertRaises(IntegrityError):
+            person1.delete()
+        with self.assertRaises(IntegrityError):
+            person2.delete()
+
+    def test_15_delete_room_in_rent_raise_integrity_error(self):
+        rooms = self.Room.select().join(
+            self.Rent, on=((self.Room.hotel_id == self.Rent.room_hotel_id) &
+                           (self.Room.number == self.Rent.room_number)))
+        for room in rooms:
+            with self.assertRaises(IntegrityError):
+                room.delete()
+
+    def test_16_delete_hotel_with_room_raise_integrity_error(self):
+        for hotel in self.Hotel.select():
+            with self.assertRaises(IntegrityError):
+                hotel.delete()
+
+    def test_17_delete_room_not_in_rent(self):
+        rooms = self.Room.select().where(
+            (self.Room.bed_count == 3) | (self.Room.bed_count == 4))
+        for room in rooms:
+            room.delete()
+
+    def test_18_delete_rent(self):
+        for rent in self.Rent.select():
+            rent.delete()
+        self.assertEqual(list(self.Rent.select()), [])
+
+    def test_19_delete_person(self):
+        for person in self.Person.select():
+            person.delete()
+        self.assertEqual(list(self.Person.select()), [])
+
+    def test_20_delete_room(self):
+        for room in self.Room.select():
+            room.delete()
+        self.assertEqual(list(self.Room.select()), [])
+
+    def test_21_delete_hotel(self):
+        for hotel in self.Hotel.select():
+            hotel.delete()
+        self.assertEqual(list(self.Hotel.select()), [])

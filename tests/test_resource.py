@@ -2,21 +2,22 @@
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
-import unittest
-from msf.resource import *
-import msf.sqltranslater
-import msf.resource
 from datetime import date
 from decimal import Decimal
+import unittest
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from msf.resource import *
+import msf.sqltranslator
+import msf.resource
+
 
 
 class MockedDataBase(msf.resource.DataBase):
     calls = []
 
     def __init__(self, *args):
-        self.sql_translater = msf.sqltranslater.SQLTranslater
+        self.sql_translator = msf.sqltranslator.SQLTranslator
 
     def initialize(self, database):
         ...
