@@ -2,7 +2,6 @@
 
 import sys
 import os
-from datetime import date
 from decimal import Decimal
 import unittest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -10,7 +9,6 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import *
 import msf.sqltranslator
 import msf.resource
-
 
 
 class MockedDataBase(msf.resource.DataBase):
@@ -25,7 +23,7 @@ class MockedDataBase(msf.resource.DataBase):
     def connect(self, *args):
         ...
         
-    def execute(self, sql_query):
+    def execute(self, sql_query, parameters=()):
         self.calls.append(sql_query)
 
 
@@ -315,7 +313,7 @@ class TestTypeFieldMetaData(unittest.TestCase):
         self.assertEqual(MetaResource.fields_types['C']['s'], str)
 
     def test_date_field_type(self):
-        self.assertEqual(MetaResource.fields_types['C']['d'], date)
+        self.assertEqual(MetaResource.fields_types['C']['d'], DateField.to_py_factory)
 
     def test_numeric_field_type(self):
         self.assertEqual(MetaResource.fields_types['C']['n']('3.14'),
@@ -323,4 +321,3 @@ class TestTypeFieldMetaData(unittest.TestCase):
 
     def test_generated_pk_field_type(self):
         self.assertEqual(MetaResource.fields_types['A']['id'], int)
-

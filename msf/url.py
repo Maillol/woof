@@ -111,12 +111,14 @@ class EntryPoint:
         self.del_urls = URLPathTree()
         self.opt_urls = URLPathTree()
 
-    def get(self, url):
+    def get(self, url, **kwargs):
         """
         Return decorator to link URL with get method to controller
         """
         def decorator(ctrl):
             self.get_urls.add(url, ctrl)
+            for key, value in kwargs.items():
+                ctrl.key = value
             return ctrl
         return decorator
 

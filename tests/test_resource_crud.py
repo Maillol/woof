@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import *
 
 
-class TestCrud(unittest.TestCase):
+class TestWithHotelSchema(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -43,6 +43,15 @@ class TestCrud(unittest.TestCase):
 
         MetaResource.initialize('sqlite', ':memory:', isolation_level=None)
         MetaResource.create_tables()
+
+    @classmethod
+    def tearDownClass(cls):
+        MetaResource.db.cursor.close()
+
+
+
+
+class TestCrud(TestWithHotelSchema):
 
     def test_01_create_hotel(self):
         hotel = self.Hotel(name="Hotel California",
@@ -276,3 +285,36 @@ class TestCrud(unittest.TestCase):
         for hotel in self.Hotel.select():
             hotel.delete()
         self.assertEqual(list(self.Hotel.select()), [])
+
+
+
+
+class TestResourceToDict(TestWithHotelSchema):
+
+    def test_hotel_to_dict(self):
+        hotel = self.Hotel(name="Tokio Hotel", address="125 main street")
+        hotel.save()
+        hotel = list(self.Hotel.select())[0]
+
+        expected = dict(
+            id=1,
+            name="Tokio Hotel",
+            address="125 main street",
+            rooms=[]
+        )
+        self.assertEqual(hotel.to_dict(), expected)
+
+    def test_hotel_with_room_to_dict(self):
+        self.Room(hotel_id=1, number=1, bed_count=2).save()
+        hotel = list(self.Hotel.select())[0]
+        expected = dict(
+            id=1,
+            name="Tokio Hotel",
+            address="125 main street",
+            rooms=[dict(
+                hotel_id=1,
+                number=1,
+                bed_count=2
+            )]
+        )
+        self.assertEqual(hotel.to_dict(), expected)

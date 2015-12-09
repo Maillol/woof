@@ -109,4 +109,3 @@ class TestEntryPoint(unittest.TestCase):
     def test_del(self):
         ctrl, params = self.root.del_urls.get('/hotel/55')
         self.assertEqual(ctrl(params[0]), 4)
-

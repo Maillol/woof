@@ -2,9 +2,6 @@
 #-*- coding:utf-8 -*-
 
 import json
-from urllib.parse import parse_qsl
-from .resource import MetaResource
-from .url_parser import path_to_sql, query_string_to_where_clause, select
 
 
 def parse_to_create(cls, extern, entity_conf):
@@ -15,108 +12,94 @@ def parse_to_create(cls, extern, entity_conf):
     return cls.create(**entity_conf)
 
 
+# query_string = [(k, fields_types[k.split('-')[0]](v)) for k, v in parse_qsl(query_string)]
+
+
+class RESTServerError(Exception):
+    pass
+
+
+class RequestHasNotBodyError(RESTServerError):
+    code = '500 No Body'
+    body = b'{"error": "Request has no body"}'
+
 
 class RESTServer:
 
-    def get(self, url, query_string):
-        entity_name, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
-        query = select(entity, entity_id, join_criterias)
+    def __init__(self, entry_point):
+        self.get_urls = entry_point.get_urls
+        self.put_urls = entry_point.put_urls
+        self.post_urls = entry_point.post_urls
+        self.del_urls = entry_point.del_urls
+        self.opt_urls = entry_point.opt_urls
 
-        if query_string:
-            fields_types = MetaResource.fields_types[entity_name]
-            query_string = [(k, fields_types[k.split('-')[0]](v)) for k, v in parse_qsl(query_string)]
-            query = query.where(query_string_to_where_clause(entity, query_string))
+    @staticmethod
+    def _parse_body(environ, start_response, response_headers):
+        try:
+            request_body_size = int(environ.get('CONTENT_LENGTH', 0))
+        except ValueError:
+            request_body_size = 0
 
-        with MetaResource.db.atomic():
-            response = json.dumps([model_to_dict(e) for e in query]).encode('utf-8')
-            return response
-
-    def post(self, url, query_string, entity_config):
-        #
-        # path, entity_name = environ['PATH_INFO'].rstrip('/').rsplit('/', 1)
-        # if path:
-        #    _, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, path)
-        #    query = select(entity, entity_id, join_criterias).get()
-
-        entity_name, entity, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
-        with MetaResource.db.atomic():
-            entity = parse_to_create(MetaResource.register[entity_name][0],
-                                     MetaResource.register[entity_name][1],
-                                     entity_config)
-
-        return json.dumps(model_to_dict(entity)).encode('utf-8')
-
-    def put(self, url, query_string, entity_config):
-        # TODO.
-        with MetaResource.db.atomic():
-            entity_name, entity_cls, entity_id, join_criterias = path_to_sql(MetaResource.register, url)
-            # FIXME: if entity_id == '': raise appropriate exception
-            entity_cls.update(**entity_config) \
-                      .where(entity_cls.id==entity_id).execute()
-
-            return json.dumps(entity_config).encode('utf-8')
+        if request_body_size:
+            request_body = environ['wsgi.input'].read(request_body_size)
+            return json.loads(request_body.decode('utf-8'))
+        raise RequestHasNotBodyError()
 
     def __call__(self, environ, start_response):
         method = environ['REQUEST_METHOD']
         response_headers = [('Content-type', 'Application/json')]
-        if method == 'GET':
-            response = self.get(environ['PATH_INFO'], environ['QUERY_STRING'])
-            start_response('200 OK', response_headers)
-            yield response
 
-        elif method == 'POST':
-            try:
-                request_body_size = int(environ.get('CONTENT_LENGTH', 0))
+        environ['QUERY_STRING']
 
-            except ValueError:
-                request_body_size = 0
+        try:
+            if method == 'GET':
+                controller, parameters = self.get_urls(environ['PATH_INFO'])
+                resources = tuple(controller(*parameters))
+                if hasattr(controller, 'once') and controller.once:
+                    if resources:
+                        code = '200 OK'
+                        body = json.dumps(resources[0].to_dict()).encode('utf-8')
 
-            if request_body_size:
-                request_body = environ['wsgi.input'].read(request_body_size)
-                entity_config = json.loads(request_body.decode('utf-8'))
-                response =  self.post(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
-                start_response('201 Created', response_headers)
-                yield response
-            else:
-                start_response('500 No Body', response_headers)
-                yield b'"Request has not body"'
-
-        elif method == 'PUT':
-            try:
-                request_body_size = int(environ.get('CONTENT_LENGTH', 0))
-
-            except ValueError:
-                request_body_size = 0
-
-            if request_body_size:
-                request_body = environ['wsgi.input'].read(request_body_size)
-                entity_config = json.loads(request_body.decode('utf-8'))
-                try:
-                    response = self.put(environ['PATH_INFO'], environ['QUERY_STRING'], entity_config)
-                    start_response('200 OK', response_headers)
-                    yield response
-                except ObjectNotFound:
-                    start_response('404 Not Found', response_headers)
-                    yield 'resource doesn\'t exist' # FIXME: I would id and type resource in msg
-
-            else:
-                start_response('500 No Body', response_headers)
-                yield b'"Request has not body"'
-
-        elif method == 'DELETE':
-            with MetaResource.db.atomic():
-                entity_name, entity_id = next(cut_path(environ['PATH_INFO']))
-                Entity = MetaResource.register[entity_name][0]
-                try:
-                    entity = Entity[entity_id]
-
-                except ObjectNotFound:
-                    start_response('404 Not Found', response_headers)
-                    yield '"resource {} doesn\'t exist"'.format(entity_id).encode('utf-8')
+                    else:
+                        code = '404 Not Found'
+                        body = b'{"error": "Resource not found"}'
 
                 else:
-                    deleted = json.dumps(entity.to_dict()).encode('utf-8')
-                    entity.delete()
-                    start_response('200 OK', response_headers)
-                    yield deleted
+                    if resources:
+                        code = '200 OK'
+                        body = json.dumps([resource.to_dict()
+                                           for resource
+                                           in resources]).encode('utf-8')
 
+                    else:
+                        code = '204 No Content'
+                        body = b'[]'
+
+            elif method == 'POST':
+                controller, parameters = self.post_urls(environ['PATH_INFO'])
+                controller(self._parse_body(environ), *parameters)
+                code = '200 Created'
+                body = ''
+
+            elif method == 'PUT':
+                controller, parameters = self.put_urls(environ['PATH_INFO'])
+                controller(self._parse_body(environ), *parameters)
+                code = '200 Updated'
+                body = ''
+
+            elif method == 'DELETE':
+                controller, parameters = self.del_urls(environ['PATH_INFO'])
+                controller(*parameters)
+                code = '200 Deleted'
+                body = ''
+
+            else:
+                code = '405 Method Not Allowed'
+                body = b'{"error": "Method Not Allowed"}'
+
+        except RESTServerError as error:
+            code = error.code
+            body = error.body
+
+        start_response(code, response_headers)
+        yield body

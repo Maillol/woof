@@ -102,10 +102,10 @@ class MetaResource(type):
     """
 
     db = DataBase()
-    register = {} # {resource_class_name:
-                  #     (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
+    register = {}  # {resource_class_name:
+                   #    (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
 
-    fields_types = {} # {name: {field_name: python_type_caster}}
+    fields_types = {}  # {name: {field_name: python_type_caster}}
 
     _starting_block = {}
 
@@ -353,7 +353,7 @@ class ForeignKey:
 
 
 class Query:
-    class Cursor():
+    class Cursor:
         def __init__(self, cursor, resource, field_names):
             self._cursor = cursor
             self._resource = resource
@@ -427,7 +427,8 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.save(self._table_name, fields)
-        db.execute(sql, values)
+        last_id = db.execute(sql, values).lastrowid
+
 
     def delete(self):
         id_names = []
@@ -440,9 +441,18 @@ class Resource(metaclass=MetaResource):
         sql = db.sql_translator.delete(self._table_name, id_names)
         db.execute(sql, values)
 
+    def to_dict(self):
+        dictionary = {}
+        for field in self._fields:
+            value = getattr(self, field.name)
+            if isinstance(value, Query):
+                value = [e.to_dict() for e in value]
+            dictionary[field.name] = value
+        return dictionary
+
 
 class Condition(object):
-    substitution = '?'
+    substitution = '?'  # FIXME
 
     def __init__(self, sql):
         self.sql = [sql]
