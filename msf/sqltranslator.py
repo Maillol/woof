@@ -1,5 +1,6 @@
 
 class SQLTranslator:
+    substitution_char = '%s'
 
     @classmethod
     def create_schema(cls, table_name, primary_key, fields):
@@ -110,6 +111,8 @@ class MysqlTranslator(SQLTranslator):
 
 
 class SqliteTranslator(SQLTranslator):
+
+    substitution_char = '?'
 
     @staticmethod
     def save(table_name, field_names):

@@ -17,9 +17,6 @@ class MockedDataBase(msf.resource.DataBase):
     def __init__(self, *args):
         self.sql_translator = msf.sqltranslator.SQLTranslator
 
-    def initialize(self, database):
-        ...
-    
     def connect(self, *args):
         ...
         
@@ -48,7 +45,7 @@ class TestFieldToSql(TestPyToSql):
             b = FloatField(nullable=True)
             c = FloatField(primary_key=True)
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -64,7 +61,7 @@ class TestFieldToSql(TestPyToSql):
             b = DateField(nullable=True)
             c = DateField(primary_key=True)
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -80,7 +77,7 @@ class TestFieldToSql(TestPyToSql):
             b = NumericField(nullable=True, precision=12, scale=4)
             c = NumericField(primary_key=True)
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -113,7 +110,7 @@ class TestFieldToSql(TestPyToSql):
             l = IntegerField(min_value=0, max_value=max_unsigned_int)
             m = IntegerField(min_value=0, max_value=max_unsigned_int + 1)
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -140,7 +137,7 @@ class TestFieldToSql(TestPyToSql):
             c = StringField(primary_key=True)
             d = StringField(fixe_length=True, length=32)            
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -163,7 +160,7 @@ class TestFieldToSql(TestPyToSql):
             a = StringField()
             res_a_set = ComposedBy('ResB')
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         self.assertExecute(
@@ -225,7 +222,7 @@ class TestComposedByCardinality(unittest.TestCase):
             c = ComposedBy('C', '1..*')
             d = ComposedBy('D', '*')
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
         cls.orm_a_cls = A
@@ -294,7 +291,7 @@ class TestTypeFieldMetaData(unittest.TestCase):
             d = DateField()
             n = NumericField()
 
-        MetaResource.initialize('', '')
+        MetaResource.initialize(MockedDataBase())
         MetaResource.create_tables()
 
     def test_number_field_type(self):

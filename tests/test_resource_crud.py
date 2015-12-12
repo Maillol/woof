@@ -7,6 +7,8 @@ from datetime import date
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import *
+from msf.db import IntegrityError
+from msf.db import DataBase
 
 
 class TestWithHotelSchema(unittest.TestCase):
@@ -41,14 +43,9 @@ class TestWithHotelSchema(unittest.TestCase):
         cls.Person = Person
         cls.Rent = Rent
 
-        MetaResource.initialize('sqlite', ':memory:', isolation_level=None)
+        data_base = DataBase('sqlite', database=':memory:', isolation_level=None)
+        MetaResource.initialize(data_base)
         MetaResource.create_tables()
-
-    @classmethod
-    def tearDownClass(cls):
-        MetaResource.db.cursor.close()
-
-
 
 
 class TestCrud(TestWithHotelSchema):

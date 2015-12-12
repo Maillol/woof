@@ -1,58 +1,7 @@
 from collections import OrderedDict
 import datetime
 from decimal import Decimal
-from .sqltranslator import (MysqlTranslator,
-                            SqliteTranslator,
-                            PostgresTranslator)
-
-
-class IntegrityError(Exception):
-    pass
-
-
-class DataBase:
-    def __init__(self):
-        self.connector = None
-        self.provider = None
-        self.connect_args = None
-        self.sql_translator = None
-        self.integrity_error = None
-
-    def initialize(self, database):
-        if database == 'sqlite':
-            import sqlite3
-            connector = sqlite3.connect
-            self.integrity_error = sqlite3.IntegrityError
-            self.sql_translator = SqliteTranslator
-            Condition.substitution = '?'
-
-        elif database == 'mysql':
-            #  mysql -u root -p ;create database msf
-            import pymysql
-            connector = pymysql.connect # (host='localhost', password="pwd", user='root', db='msf')
-            self.sql_translator = MysqlTranslator
-            Condition.substitution = '%s'
-
-        elif database == 'postgres':
-            from pyPgSQL import PgSQL as connector
-            self.sql_translator = PostgresTranslator
-            Condition.substitution = '%s'
-
-        else:
-            raise ValueError('initialize parameter must be on of "sqlite", "mysql", "postgres"')
-
-        self.provider = database
-        self.connector = connector
-
-    def connect(self, *args, **kwargs):
-        self.connect_args = args
-        self.cursor = self.connector(*args, **kwargs)
-
-    def execute(self, sql_query, parameters=()):
-        try:
-            return self.cursor.execute(sql_query, parameters)
-        except self.integrity_error as error:
-            raise IntegrityError(error.args[0])
+from .db import DataBase
 
 
 def to_underscore(name):
@@ -101,11 +50,11 @@ class MetaResource(type):
     You can use MetaResource.register in order to search ORM class using resource class Name.
     """
 
-    db = DataBase()
-    register = {}  # {resource_class_name:
-                   #    (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
+    db = None
+    register = {} # {resource_class_name:
+                  #     (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
 
-    fields_types = {}  # {name: {field_name: python_type_caster}}
+    fields_types = {} # {name: {field_name: python_type_caster}}
 
     _starting_block = {}
 
@@ -115,7 +64,7 @@ class MetaResource(type):
 
             Meta:
                 weak_id = []
-                primary_key = [] # used by get_id_fields_names method
+                primary_key = [] # used by get_id_fields_names method and to push generated id after save.
                 constraints = {'pk': None, # A PrimaryKey object
                                'fks': []}
                 required_resource_for_pk = []
@@ -325,12 +274,14 @@ class MetaResource(type):
                 mcs.db.execute(sql)
 
     @classmethod
-    def initialize(mcs, database, *args, **kwargs):
+    def initialize(mcs, database):
+        if not isinstance(database, DataBase):
+            raise TypeError("Initialize's parameter must be DataBase object")
+
         mcs._build_foreign_key()
         mcs._build_orm_layer()
         mcs._name_to_ref()
-        mcs.db.initialize(database)
-        mcs.db.connect(*args, **kwargs)
+        mcs.db = database
 
     @classmethod
     def clear(mcs):
@@ -427,8 +378,10 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.save(self._table_name, fields)
-        last_id = db.execute(sql, values).lastrowid
-
+        last_id = db.execute(sql, values).lastrowid # FIXME push last_id to _state.
+        for field in self.Meta.primary_key:
+            if field.name == 'id':
+               self.id = last_id
 
     def delete(self):
         id_names = []
@@ -452,7 +405,7 @@ class Resource(metaclass=MetaResource):
 
 
 class Condition(object):
-    substitution = '?'  # FIXME
+    substitution = '?'
 
     def __init__(self, sql):
         self.sql = [sql]
@@ -700,5 +653,5 @@ class ComposedBy(Field):
 
 
 __all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
-           'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'IntegrityError', 'association']
+           'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'association']
 

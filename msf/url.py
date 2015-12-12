@@ -59,11 +59,12 @@ class URLPathTree:
     def get(self, url):
         """
         Search url in the tree and a 2-tuple wich contains ctrl 
-        and list of parameters.
+        and list of parameters. If url isn't found LookupError is raised
+        with url in args[1]
         """
         def walk(path, node, values):
             if not path:
-                return (node.ctrl, values)
+                return node.ctrl, values
 
             for node in node.children:
                 if isinstance(node.value, _PathParameter):
@@ -76,7 +77,10 @@ class URLPathTree:
                         return result
 
         path = url.split('/')
-        return walk(path[1:], self._root, [])
+        result = walk(path[1:], self._root, [])
+        if result is None:
+            raise LookupError("URL not found", url)
+        return result
 
     def __repr__(self):
         def walk(node, offset):

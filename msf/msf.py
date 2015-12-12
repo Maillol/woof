@@ -24,6 +24,11 @@ class RequestHasNotBodyError(RESTServerError):
     body = b'{"error": "Request has no body"}'
 
 
+class NotFoundError(RESTServerError):
+    code = '404 Not Found'
+    body = b'{"error": "Not Found"}'
+
+
 class RESTServer:
 
     def __init__(self, entry_point):
@@ -34,7 +39,7 @@ class RESTServer:
         self.opt_urls = entry_point.opt_urls
 
     @staticmethod
-    def _parse_body(environ, start_response, response_headers):
+    def _parse_body(environ):
         try:
             request_body_size = int(environ.get('CONTENT_LENGTH', 0))
         except ValueError:
@@ -50,10 +55,13 @@ class RESTServer:
         response_headers = [('Content-type', 'Application/json')]
 
         environ['QUERY_STRING']
-
         try:
             if method == 'GET':
-                controller, parameters = self.get_urls(environ['PATH_INFO'])
+                try:
+                    controller, parameters = self.get_urls.get(environ['PATH_INFO'])
+                except LookupError:
+                    raise NotFoundError()
+
                 resources = tuple(controller(*parameters))
                 if hasattr(controller, 'once') and controller.once:
                     if resources:
@@ -65,33 +73,45 @@ class RESTServer:
                         body = b'{"error": "Resource not found"}'
 
                 else:
+                    code = '200 OK'
                     if resources:
-                        code = '200 OK'
                         body = json.dumps([resource.to_dict()
                                            for resource
                                            in resources]).encode('utf-8')
 
                     else:
-                        code = '204 No Content'
                         body = b'[]'
 
             elif method == 'POST':
-                controller, parameters = self.post_urls(environ['PATH_INFO'])
-                controller(self._parse_body(environ), *parameters)
+                try:
+                    controller, parameters = self.post_urls.get(environ['PATH_INFO'])
+                except LookupError:
+                    raise NotFoundError()
+
+                resource = controller(self._parse_body(environ), *parameters)
+                #response_headers.append(('Location', resource_location))
                 code = '200 Created'
-                body = ''
+                body = json.dumps(resource.to_dict()).encode('utf-8')
 
             elif method == 'PUT':
-                controller, parameters = self.put_urls(environ['PATH_INFO'])
+                try:
+                    controller, parameters = self.put_urls.get(environ['PATH_INFO'])
+                except LookupError:
+                    raise NotFoundError()
+
                 controller(self._parse_body(environ), *parameters)
                 code = '200 Updated'
-                body = ''
+                body = b'""'
 
             elif method == 'DELETE':
-                controller, parameters = self.del_urls(environ['PATH_INFO'])
+                try:
+                    controller, parameters = self.del_urls.get(environ['PATH_INFO'])
+                except LookupError:
+                    raise NotFoundError()
+
                 controller(*parameters)
                 code = '200 Deleted'
-                body = ''
+                body = b'""'
 
             else:
                 code = '405 Method Not Allowed'
@@ -103,3 +123,4 @@ class RESTServer:
 
         start_response(code, response_headers)
         yield body
+
