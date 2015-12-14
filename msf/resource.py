@@ -65,17 +65,14 @@ class MetaResource(type):
             Meta:
                 weak_id = []
                 primary_key = [] # used by get_id_fields_names method and to push generated id after save.
-                constraints = {'pk': None, # A PrimaryKey object
-                               'fks': []}
+                foreign_keys = []
                 required_resource_for_pk = []
                 association_meta_data = []
         """
         if not hasattr(cls, 'Meta'):
             cls.Meta = type('Meta', (), {})
-        if not hasattr(cls.Meta, 'constraints'):
-            cls.Meta.constraints = {}
-        cls.Meta.constraints.setdefault('pk', None)
-        cls.Meta.constraints.setdefault('fks', [])
+        if not hasattr(cls.Meta, 'foreign_keys'):
+            cls.Meta.foreign_keys = []
         if not hasattr(cls.Meta, 'primary_key'):
             cls.Meta.primary_key = []
         if not hasattr(cls.Meta, 'weak_id'):
@@ -175,8 +172,7 @@ class MetaResource(type):
 
         # Set _id_fields_name
         for resource in MetaResource._starting_block.values():
-            resource._id_fields_names = get_id_fields_names(resource)
-            resource.Meta.constraints['pk'] = PrimaryKey([e[0] for e in resource._id_fields_names])
+            resource._id_fields_names = tuple(e[0] for e in get_id_fields_names(resource))
 
         for resource_name, resource in MetaResource._starting_block.items():
             if resource.Meta.association_meta_data:
@@ -185,7 +181,7 @@ class MetaResource(type):
 
                     fk_names = [('{}_{}'.format(other_resource._table_name, name), field)
                                 for name, field
-                                in other_resource._id_fields_names]
+                                in get_id_fields_names(other_resource)]
 
                     for fk_name, fk_field in fk_names:
                         add_field(resource, fk_name, type(fk_field)())
@@ -196,23 +192,23 @@ class MetaResource(type):
                     setattr(resource, other_resource._table_name + '_ref',
                             FromAssociationField(other_resource))
 
-                    resource.Meta.constraints['fks'].append(
+                    resource.Meta.foreign_keys.append(
                         ForeignKey([e[0] for e in fk_names], other_resource._table_name,
-                                   [e[0] for e in other_resource._id_fields_names])
+                                   other_resource._id_fields_names)
                     )
 
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     other_resource = MetaResource._starting_block[field.other_resource]
-                    id_names = other_resource._id_fields_names
+                    id_names = get_id_fields_names(other_resource)
                     fk_names = id_names[len(other_resource.Meta.weak_id):]
 
                     for fk_name, fk_field in fk_names:
                         add_field(other_resource, fk_name, type(fk_field)())
 
-                    other_resource.Meta.constraints['fks'].append(
+                    other_resource.Meta.foreign_keys.append(
                         ForeignKey([e[0] for e in fk_names], resource._table_name,
-                                   [e[0] for e in resource._id_fields_names])
+                                   resource._id_fields_names)
                     )
 
     @classmethod
@@ -263,14 +259,14 @@ class MetaResource(type):
             resource = mcs.register[resource_name][0]
             sql = mcs.db.sql_translator.create_schema(
                 resource._table_name,
-                resource.Meta.constraints['pk'],
-                (field for field in resource._fields if isinstance(field, ScalarField))
+                (field for field in resource._fields if isinstance(field, ScalarField)),
+                resource._id_fields_names
             )
             mcs.db.execute(sql)
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
             for sql in mcs.db.sql_translator.create_schema_constraints(
-                resource._table_name, resource.Meta.constraints['fks']):
+                resource._table_name, resource.Meta.foreign_keys):
                 mcs.db.execute(sql)
 
     @classmethod
@@ -289,11 +285,6 @@ class MetaResource(type):
         mcs.fields_types = {}
         mcs._resource_fields = []
         mcs._starting_block = {}
-
-
-class PrimaryKey:
-    def __init__(self, fields):
-        self.fields = fields
 
 
 class ForeignKey:
@@ -384,14 +375,12 @@ class Resource(metaclass=MetaResource):
                self.id = last_id
 
     def delete(self):
-        id_names = []
         values = []
-        for field_name, _ in self._id_fields_names:
-            id_names.append(field_name)
+        for field_name in self._id_fields_names:
             values.append(self._state[field_name])
 
         db = type(type(self)).db
-        sql = db.sql_translator.delete(self._table_name, id_names)
+        sql = db.sql_translator.delete(self._table_name, self._id_fields_names)
         db.execute(sql, values)
 
     def to_dict(self):
@@ -573,14 +562,14 @@ class ToAssociationField(Field):
     def __get__(self, obj, cls=None):
         query = self.association.select()
 
-        field_name = obj._id_fields_names[0][0]
+        field_name = obj._id_fields_names[0]
         related = getattr(self.association,
                           obj._table_name + '_' + field_name)
         local = getattr(type(obj), field_name)
 
         join_criteria = related == local
         where_criteria = local == getattr(obj, field_name)
-        for field_name, _ in obj._id_fields_names[1:]:
+        for field_name in obj._id_fields_names[1:]:
             related = getattr(self.association,
                               obj._table_name + '_' + field_name)
             local = getattr(type(obj), field_name)
@@ -596,13 +585,13 @@ class FromAssociationField(Field):
         self.resource = resource
 
     def __get__(self, association, cls=None):
-        field_name = self.resource._id_fields_names[0][0]
+        field_name = self.resource._id_fields_names[0]
         association_field_value = getattr(
             association, self.resource._table_name + '_' + field_name)
         resource_field_name = getattr(self.resource, field_name)
         where_criteria = resource_field_name == association_field_value
 
-        for field_name, _ in self.resource._id_fields_names[1:]:
+        for field_name in self.resource._id_fields_names[1:]:
             association_field_value = getattr(
                 association, self.resource._table_name + '_' + field_name)
             resource_field_name = getattr(self.resource, field_name)
@@ -639,11 +628,11 @@ class ComposedBy(Field):
 
         field = obj._id_fields_names[0]
         clause_where = (getattr(other_resource,
-                                obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
+                                obj._table_name + '_' + field) == getattr(obj, field))
 
         for field in obj._id_fields_names[1:]:
             clause_where &= (
-                getattr(other_resource, obj._table_name + '_' + field[0]) == getattr(obj, field[0]))
+                getattr(other_resource, obj._table_name + '_' + field) == getattr(obj, field))
 
         query.where(clause_where)
         return query

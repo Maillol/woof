@@ -3,18 +3,15 @@ class SQLTranslator:
     substitution_char = '%s'
 
     @classmethod
-    def create_schema(cls, table_name, primary_key, fields):
+    def create_schema(cls, table_name, fields, primary_key_field_name=[]):
         field_def = ', '.join(cls.field_definition(field) for field in fields) 
-        if primary_key is not None:
-            pk_def = cls.translate_pk(primary_key.fields)
-        else:
-            pk_def = ""   
-        return "CREATE TABLE {table_name}({field_def}{pk_def});".format(**locals())  
+        pk_def = cls.translate_pk(primary_key_field_name)
+        return "CREATE TABLE {table_name}({field_def}{pk_def});".format(**locals())
 
     @classmethod
-    def translate_pk(cls, primary_key_fields):
-        if primary_key_fields:
-            return ", PRIMARY KEY ({})".format(", ".join(primary_key_fields))
+    def translate_pk(cls, primary_key_field_name):
+        if primary_key_field_name:
+            return ", PRIMARY KEY ({})".format(", ".join(primary_key_field_name))
         return ""
 
     @classmethod
@@ -25,7 +22,7 @@ class SQLTranslator:
     def foreign_key(cls, table_name, fk):
         fields = ", ".join(fk.fields)
         referenced_fields = ", ".join(fk.referenced_fields)
-        referenced_table = fk.referenced_resource 
+        referenced_table = fk.referenced_resource
 
         return (
             "ALTER TABLE {table_name} "
