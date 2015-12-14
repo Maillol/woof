@@ -75,7 +75,7 @@ class TestCrud(unittest.TestCase):
         cls.saved_books = []
 
     def test_01_select_books(self):
-        books = self.server.get('/books', '')
+        books = self.server.get('/api/books', '')
         self.assertEqual(books, b'[]')
 
     def test_02_create_book(self):
@@ -85,13 +85,13 @@ class TestCrud(unittest.TestCase):
         expected_book = dict(id=1, chapters=[])
         expected_book.update(book)
 
-        created_book = self.server.post('/books', '', json.dumps(book))
+        created_book = self.server.post('/api/books', '', json.dumps(book))
 
         self.saved_books.append(expected_book)
         self.AssertJsonEqual(created_book, expected_book)
 
     def test_03_select_books(self):
-        books = self.server.get('/books', '')
+        books = self.server.get('/api/books', '')
         self.AssertJsonEqual(books, self.saved_books)
 
     @classmethod

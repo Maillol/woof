@@ -69,6 +69,24 @@ class TestURLPathTree(unittest.TestCase):
         self.assertEqual(ctrl, person)
         self.assertEqual(parameters, ['martin'])
 
+    def test_get_wrong_url(self):
+        with self.assertRaises(LookupError):
+            self.url_path_tree.get("/horse")
+
+    def test_get_room_without_hotel_id(self):
+        ctrl, parameters = self.url_path_tree.get("/hotel//room/42")
+        self.assertEqual(ctrl, room)
+        self.assertEqual(parameters, ['', '42'])
+
+    def test_get_room_without_room_and_hotel_id(self):
+        ctrl, parameters = self.url_path_tree.get("/hotel//room/")
+        self.assertEqual(ctrl, room)
+        self.assertEqual(parameters, ['', ''])
+
+    def test_cannot_add_existing_url(self):
+        with self.assertRaises(ValueError):
+            self.url_path_tree.add("/hotel/{id}/room/{id}", room)
+
 
 class TestEntryPoint(unittest.TestCase):
 
@@ -77,8 +95,12 @@ class TestEntryPoint(unittest.TestCase):
         root = EntryPoint('/api')
 
         @root.get('/hotel')
-        def get_hotel():
+        def get_hotels():
             return 1
+
+        @root.get('/hotel/{id}', once=True)
+        def get_hotel(id):
+            return 15
 
         @root.put('/hotel/{id}')
         def put_hotel(id):
@@ -95,17 +117,23 @@ class TestEntryPoint(unittest.TestCase):
         cls.root = root
 
     def test_get(self):
-        ctrl = self.root.get_urls.get('/hotel')[0]
+        ctrl = self.root.get_urls.get('/api/hotel')[0]
         self.assertEqual(ctrl(), 1)
+        self.assertFalse(hasattr(ctrl, 'once'))
+
+    def test_get_once(self):
+        ctrl, params = self.root.get_urls.get('/api/hotel/427')
+        self.assertTrue(ctrl.once)
+        self.assertEqual(ctrl(params[0]), 15)
 
     def test_put(self):
-        ctrl, params = self.root.put_urls.get('/hotel/11')
+        ctrl, params = self.root.put_urls.get('/api/hotel/11')
         self.assertEqual(ctrl(params[0]), 2)
 
     def test_post(self):
-        ctrl = self.root.post_urls.get('/hotel')[0]
+        ctrl = self.root.post_urls.get('/api/hotel')[0]
         self.assertEqual(ctrl(), 3)
 
     def test_del(self):
-        ctrl, params = self.root.del_urls.get('/hotel/55')
+        ctrl, params = self.root.del_urls.get('/api/hotel/55')
         self.assertEqual(ctrl(params[0]), 4)

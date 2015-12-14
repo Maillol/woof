@@ -42,6 +42,15 @@ class URLPathTree:
         """
         Assigne ctrl to a url in the tree.
         """
+
+        try:
+            found_ctrl, _ = self.get(url)
+        except LookupError:
+            pass
+        else:
+            raise ValueError("URL '{}' already linked with {}"
+                             .format(url, found_ctrl))
+
         current_node = self._root
         for url_dir in url.split('/')[1:]:
             if url_dir.startswith('{'):
@@ -108,6 +117,8 @@ class EntryPoint:
     """
 
     def __init__(self, url_prefix=''):
+        if url_prefix != '' and not url_prefix.startswith('/'):
+            raise ValueError("url_prefix must start with '/' or be an empty string")
         self.url_prefix = url_prefix
         self.get_urls = URLPathTree()
         self.put_urls = URLPathTree()
@@ -120,9 +131,9 @@ class EntryPoint:
         Return decorator to link URL with get method to controller
         """
         def decorator(ctrl):
-            self.get_urls.add(url, ctrl)
+            self.get_urls.add(self.url_prefix + url, ctrl)
             for key, value in kwargs.items():
-                ctrl.key = value
+                setattr(ctrl, key, value)
             return ctrl
         return decorator
 
@@ -131,7 +142,7 @@ class EntryPoint:
         Return decorator to link URL with put method to controller
         """
         def decorator(ctrl):
-            self.put_urls.add(url, ctrl)
+            self.put_urls.add(self.url_prefix + url, ctrl)
             return ctrl
         return decorator
 
@@ -140,7 +151,7 @@ class EntryPoint:
         Return decorator to link URL with post method to controller
         """
         def decorator(ctrl):
-            self.post_urls.add(url, ctrl)
+            self.post_urls.add(self.url_prefix + url, ctrl)
             return ctrl
         return decorator
 
@@ -149,7 +160,7 @@ class EntryPoint:
         Return decorator to link URL with delete method to controller
         """
         def decorator(ctrl):
-            self.del_urls.add(url, ctrl)
+            self.del_urls.add(self.url_prefix + url, ctrl)
             return ctrl
         return decorator
 
