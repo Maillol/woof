@@ -104,76 +104,56 @@ class MetaResource(type):
     def __prepare__(self, cls, bases):
         return OrderedDict()
 
-    # FIXME _build_foreign_key must raise error when Resource has weak_id without be referenced by an other resource
+    @staticmethod
+    def add_field(resource, name, field, position=None):
+        if position is None:
+            position = len(resource._fields)
+        resource._fields.insert(position, field)
+        field.name = name
+        setattr(resource, name, field)
+        if field.primary_key:
+            resource.Meta.primary_key.append(field)
+        elif field.weak_id:
+            resource.Meta.weak_id.append(field)
+
     @classmethod
-    def _build_foreign_key(mcs):
-
-        def get_id_fields_names(cls):
-            if cls.Meta.weak_id:
-                fields = [(field.name, field) for field in cls.Meta.weak_id]
-                for required_cls in cls.Meta.required_resource_for_pk:
-                    prefix = required_cls._table_name
-                    fields.extend(
-                        ('{}_{}'.format(prefix, field_name), field)
-                        for (field_name, field)
-                        in get_id_fields_names(required_cls)
-                    )
-                return fields
-
-            if cls.Meta.required_resource_for_pk:
-                fields = [(field.name, field) for field in cls.Meta.primary_key]
-                for required_cls_name in cls.Meta.required_resource_for_pk:
-                    required_cls = type(cls)._starting_block[required_cls_name]
-                    prefix = required_cls._table_name
-                    fields.extend(
-                        ('{}_{}'.format(prefix, field_name), field)
-                        for (field_name, field)
-                        in get_id_fields_names(required_cls)
-                    )
-                return fields
-
-            return [(field.name, field) for field in cls.Meta.primary_key]
-
-        def add_field(resource, name, field, position=None):
-            if position is None:
-                position = len(resource._fields)
-            resource._fields.insert(position, field)
-            field.name = name
-            setattr(resource, name, field)
-            if field.primary_key:
-                resource.Meta.primary_key.append(field)
-            elif field.weak_id:
-                resource.Meta.weak_id.append(field)
-
-        def make_id_if_not_exist(resource):
-            if not resource.Meta.primary_key:
-                add_field(resource, 'id', IntegerField(primary_key=True), 0)
-
-        def make_weak_id_if_not_exist(resource):
-            if not resource.Meta.weak_id:
-                add_field(resource, 'weak_id', IntegerField(weak_id=True), 0)
-
-        # Generate weak_id:
-        # TODO generate reated_field...
+    def _generate_weak_id_if_not_exist(mcs):
+        """
+        1) Search all resource pointed by a ComposedBy field.
+        2) Add weak id field and  set Meta.required_resource_for_pk.
+        """
         for resource_name, resource in MetaResource._starting_block.items():
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
-                    weak_entity = MetaResource._starting_block[field.other_resource]
+                    try:
+                        weak_entity = MetaResource._starting_block[field.other_resource]
+                    except KeyError:
+                        raise TypeError("Field '{}' in {} references a non-existing resource '{}'"
+                                        .format(field.name, resource, field.other_resource))
+
                     if weak_entity.Meta.primary_key:
                         raise TypeError(weak_entity +
                                         ' cannot have primary key because it is contained in ' + resource)
-                    make_weak_id_if_not_exist(weak_entity)
+
+                    if not weak_entity.Meta.weak_id:
+                        mcs.add_field(weak_entity, 'weak_id', IntegerField(weak_id=True), 0)
                     weak_entity.Meta.required_resource_for_pk = [resource]
 
-        # Generate id
+    @classmethod
+    def _generate_primary_key_if_not_exist(mcs):
+        """
+        Search all resources which isn't weak entity and add a primary key field
+        if it doesn't have a primary key.
+        """
         for resource_name, resource in MetaResource._starting_block.items():
-            if not resource.Meta.weak_id:
-                make_id_if_not_exist(resource)
+            if not resource.Meta.weak_id and not resource.Meta.primary_key:
+                mcs.add_field(resource, 'id', IntegerField(primary_key=True), 0)
 
-        # Set _id_fields_name
-        for resource in MetaResource._starting_block.values():
-            resource._id_fields_names = tuple(e[0] for e in get_id_fields_names(resource))
-
+    @classmethod
+    def _set_meta_foreign_key(mcs):
+        """
+        Set Meta.foreign_keys field of the associations and weak entities.
+        """
         for resource_name, resource in MetaResource._starting_block.items():
             if resource.Meta.association_meta_data:
                 for other_resource_name, card in resource.Meta.association_meta_data.items():
@@ -181,10 +161,15 @@ class MetaResource(type):
 
                     fk_names = [('{}_{}'.format(other_resource._table_name, name), field)
                                 for name, field
-                                in get_id_fields_names(other_resource)]
+                                in mcs.get_id_fields_names(other_resource)]
 
                     for fk_name, fk_field in fk_names:
-                        add_field(resource, fk_name, type(fk_field)())
+                        mcs.add_field(resource, fk_name, type(fk_field)())
+
+                    resource.Meta.foreign_keys.append(
+                        ForeignKey([e[0] for e in fk_names], other_resource._table_name,
+                                   other_resource._id_fields_names)
+                    )
 
                     setattr(other_resource, resource._table_name + '_set',
                             ToAssociationField(resource))
@@ -192,27 +177,49 @@ class MetaResource(type):
                     setattr(resource, other_resource._table_name + '_ref',
                             FromAssociationField(other_resource))
 
-                    resource.Meta.foreign_keys.append(
-                        ForeignKey([e[0] for e in fk_names], other_resource._table_name,
-                                   other_resource._id_fields_names)
-                    )
-
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
                     other_resource = MetaResource._starting_block[field.other_resource]
-                    id_names = get_id_fields_names(other_resource)
+                    id_names = mcs.get_id_fields_names(other_resource)
                     fk_names = id_names[len(other_resource.Meta.weak_id):]
 
                     for fk_name, fk_field in fk_names:
-                        add_field(other_resource, fk_name, type(fk_field)())
+                        mcs.add_field(other_resource, fk_name, type(fk_field)())
 
                     other_resource.Meta.foreign_keys.append(
                         ForeignKey([e[0] for e in fk_names], resource._table_name,
                                    resource._id_fields_names)
                     )
 
+    @staticmethod
+    def get_id_fields_names(resource):
+        if resource.Meta.weak_id:
+            fields = [(field.name, field) for field in resource.Meta.weak_id]
+            for required_cls in resource.Meta.required_resource_for_pk:
+                prefix = required_cls._table_name
+                fields.extend(
+                    ('{}_{}'.format(prefix, field_name), field)
+                    for (field_name, field)
+                    in MetaResource.get_id_fields_names(required_cls)
+                )
+            return fields
+
+        if resource.Meta.required_resource_for_pk:
+            fields = [(field.name, field) for field in resource.Meta.primary_key]
+            for required_cls_name in resource.Meta.required_resource_for_pk:
+                required_cls = MetaResource._starting_block[required_cls_name]
+                prefix = required_cls._table_name
+                fields.extend(
+                    ('{}_{}'.format(prefix, field_name), field)
+                    for (field_name, field)
+                    in MetaResource.get_id_fields_names(required_cls)
+                )
+            return fields
+
+        return [(field.name, field) for field in resource.Meta.primary_key]
+
     @classmethod
-    def _build_orm_layer(mcs):
+    def _set_register(mcs):
         for name, cls in MetaResource._starting_block.items():
             mcs.register[name] = (
                 cls,
@@ -273,9 +280,12 @@ class MetaResource(type):
     def initialize(mcs, database):
         if not isinstance(database, DataBase):
             raise TypeError("Initialize's parameter must be DataBase object")
-
-        mcs._build_foreign_key()
-        mcs._build_orm_layer()
+        mcs._generate_weak_id_if_not_exist()
+        mcs._generate_primary_key_if_not_exist()
+        for resource in MetaResource._starting_block.values():
+            resource._id_fields_names = tuple(e[0] for e in mcs.get_id_fields_names(resource))
+        mcs._set_meta_foreign_key()
+        mcs._set_register()
         mcs._name_to_ref()
         mcs.db = database
 
@@ -320,7 +330,7 @@ class Query:
         self.where_criteria = criteria
         return self
 
-    def __iter__(self):
+    def get_sql(self):
         field_names = [field.name
                        for field in self.resource._fields
                        if isinstance(field, ScalarField)]
@@ -336,6 +346,10 @@ class Query:
             sql += " WHERE {}".format(' '.join(self.where_criteria.sql))
             user_input = self.where_criteria.user_input
 
+        return sql, user_input, field_names
+
+    def __iter__(self):
+        sql, user_input, field_names = self.get_sql()
         cursor = type(self.resource).db.execute(sql, user_input)
         return self.Cursor(cursor, self.resource, field_names)
 
@@ -369,7 +383,7 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.save(self._table_name, fields)
-        last_id = db.execute(sql, values).lastrowid # FIXME push last_id to _state.
+        last_id = db.execute(sql, values).lastrowid  # FIXME push last_id to _state.
         for field in self.Meta.primary_key:
             if field.name == 'id':
                self.id = last_id

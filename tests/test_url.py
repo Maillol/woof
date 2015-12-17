@@ -32,12 +32,13 @@ class TestURLPathTree(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.url_path_tree = URLPathTree()
+
         cls.url_path_tree.add("/hotel", hotels)
         cls.url_path_tree.add("/hotel/{id}", hotel)
         cls.url_path_tree.add("/hotel/{id}/room", rooms)
         cls.url_path_tree.add("/hotel/{id}/room/{id}", room)
-        cls.url_path_tree.add("/person", persons)
         cls.url_path_tree.add("/person/{id}", person)
+        cls.url_path_tree.add("/person", persons)
 
     def test_get_hotels(self):
         ctrl, parameters = self.url_path_tree.get("/hotel")
@@ -98,7 +99,7 @@ class TestEntryPoint(unittest.TestCase):
         def get_hotels():
             return 1
 
-        @root.get('/hotel/{id}', once=True)
+        @root.get('/hotel/{id}', single=True)
         def get_hotel(id):
             return 15
 
@@ -119,11 +120,11 @@ class TestEntryPoint(unittest.TestCase):
     def test_get(self):
         ctrl = self.root.get_urls.get('/api/hotel')[0]
         self.assertEqual(ctrl(), 1)
-        self.assertFalse(hasattr(ctrl, 'once'))
+        self.assertFalse(hasattr(ctrl, 'single'))
 
-    def test_get_once(self):
+    def test_get_single(self):
         ctrl, params = self.root.get_urls.get('/api/hotel/427')
-        self.assertTrue(ctrl.once)
+        self.assertTrue(ctrl.single)
         self.assertEqual(ctrl(params[0]), 15)
 
     def test_put(self):

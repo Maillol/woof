@@ -2,7 +2,7 @@
 #-*- coding:utf-8 -*-
 
 import json
-
+import os
 
 def parse_to_create(cls, extern, entity_conf):
     for k, v in entity_conf.items():
@@ -63,7 +63,7 @@ class RESTServer:
                     raise NotFoundError()
 
                 resources = tuple(controller(*parameters))
-                if hasattr(controller, 'once') and controller.once:
+                if hasattr(controller, 'single') and controller.single:
                     if resources:
                         code = '200 OK'
                         body = json.dumps(resources[0].to_dict()).encode('utf-8')

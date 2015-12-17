@@ -18,7 +18,7 @@ class URLPathTree:
     """
     Store path template.
 
-    A path template is string wich contains one or several word
+    A path template is string which contains one or several word
     separate by the '/' char. A word can be a substitution sting if it surrounded by braces.
 
     i.e:
@@ -34,6 +34,10 @@ class URLPathTree:
             self.value = value
             self.children = ()
             self.ctrl = ctrl
+
+        def __repr__(self):
+            return ("<Node ('{s.value}', {s.ctrl}, {nb_children})>"
+                    .format(s=self, nb_children=len(self.children)))
 
     def __init__(self):
         self._root = URLPathTree.Node('')
@@ -73,6 +77,8 @@ class URLPathTree:
         """
         def walk(path, node, values):
             if not path:
+                if node.ctrl is None:
+                    return None
                 return node.ctrl, values
 
             for node in node.children:
@@ -164,3 +170,94 @@ class EntryPoint:
             return ctrl
         return decorator
 
+    def crud(self, url, resource):
+        """
+        Generate controllers for resource.
+        url must have word surrounded by square brackets in order to define
+        id position in url used by delete, put and get controller.
+        """
+        if not url.startswith('/'):
+            raise ValueError("url must start with '/'")
+
+        # FIXME raise an error if url hasn't brackets.
+        resources_url = ''
+        single_resource_url = ''
+        for word in url.strip('/').split('/'):
+            if word.startswith('['):
+                substitution = word.replace('[', '{').replace(']', '}')
+                single_resource_url += '/' + substitution
+            else:
+                resources_url += '/' + word
+                single_resource_url += '/' + word
+
+        decorator = self.get(single_resource_url, single=True)
+        decorator(GetSingleControllerBuilder(resource))
+
+        decorator = self.get(resources_url)
+        decorator(GetControllerBuilder(resource))
+
+        decorator = self.post(resources_url)
+        decorator(PostControllerBuilder(resource))
+
+        decorator = self.delete(single_resource_url)
+        decorator(DeleteControllerBuilder(resource))
+
+
+class GetSingleControllerBuilder:
+    """
+    Generate controller for get single resource request.
+    """
+
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __call__(self, *args):
+        field = self.resource._id_fields_names[0]
+        where_clause = getattr(self.resource, field) == args[0]
+        for i, field in enumerate(self.resource._id_fields_names[1:], 1):
+            where_clause &= getattr(self.resource, field) == args[i]
+
+        return self.resource.select().where(where_clause)
+
+
+class GetControllerBuilder:
+    """
+    Generate controller for get resources request.
+    """
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __call__(self, *args):
+        return self.resource.select()
+
+
+class PostControllerBuilder:
+    """
+    Generate controller for post resources request.
+    """
+
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __call__(self, body):
+        instance = self.resource(**body)
+        instance.save()
+        return instance
+
+
+class DeleteControllerBuilder:
+    """
+    Generate controller for delete resources request.
+    """
+
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __call__(self, *args):
+        field = self.resource._id_fields_names[0]
+        where_clause = getattr(self.resource, field) == args[0]
+        for i, field in enumerate(self.resource._id_fields_names[1:], 1):
+            where_clause &= getattr(self.resource, field) == args[i]
+
+        instance = list(self.resource.select().where(where_clause))[0]
+        instance.delete()
