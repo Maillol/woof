@@ -13,7 +13,7 @@ from io import BytesIO
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import MetaResource
-from msf.msf import RESTServer
+from msf.msf import RESTServer, config
 from msf.db import DataBase
 
 
@@ -67,7 +67,16 @@ class TestCrud(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp_dir = TemporaryDirectory()
-        database = DataBase('sqlite', database=os.path.join(cls.tmp_dir.name, 'test.db'))
+        with open('config.json', 'w') as conf_file:
+            conf_file.write(
+                '{'
+                    '"database": {'
+                        '"provider": "sqlite",'
+                        '"database": "%s"'
+                    '}'
+                '}' % os.path.join(cls.tmp_dir.name, 'test.db'))
+
+        database = config.database
         MetaResource.initialize(database)
         MetaResource.create_tables()
         application = RESTServer(root_url)
@@ -97,3 +106,4 @@ class TestCrud(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmp_dir.cleanup()
+        os.remove('config.json')
