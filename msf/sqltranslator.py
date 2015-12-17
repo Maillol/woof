@@ -1,5 +1,20 @@
 
-class SQLTranslator:
+class MetaSQLTranslator(type):
+
+    PROVIDERS = {}
+
+    def __init__(cls, name, bases, attrs):
+        if name != 'SQLTranslator':
+            if name.endswith('Translator'):
+                provider_name = name[:-len('Translator')].lower()
+                type(cls).PROVIDERS[provider_name] = cls
+                cls.PROVIDER = provider_name
+            else:
+                raise ValueError("{} class name must end with by '{}'"
+                                 .format(cls, 'Translator'))
+
+
+class SQLTranslator(metaclass=MetaSQLTranslator):
     substitution_char = '%s'
 
     @classmethod
@@ -176,8 +191,8 @@ class SqliteTranslator(SQLTranslator):
             "END;".format(**locals()))
 
 
-class PostgresTranslator(SQLTranslator):
+class PostgresqlTranslator(SQLTranslator):
 
     @staticmethod
     def binary_field(field):
-        return '{name} BYTEA  {null}'
+        return '{name} BYTEA {null}'
