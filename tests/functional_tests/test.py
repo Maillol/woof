@@ -13,7 +13,7 @@ from io import BytesIO
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import MetaResource
-from msf.msf import RESTServer, config
+from msf.server import RESTServer, config
 from msf.db import DataBase
 
 

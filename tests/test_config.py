@@ -5,9 +5,9 @@ import os
 import unittest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from msf.msf.config import (ConfigIsNotValidError, ChoiceValidator, IntValidator,
-                            FloatValidator, StrValidator, DictValidator, 
-                            ListValidator, TranstypingValidator)
+from msf.server.config import (ConfigIsNotValidError, ChoiceValidator, IntValidator,
+                               FloatValidator, StrValidator, DictValidator, 
+                               ListValidator, TranstypingValidator)
 
 
 def stub_constructor(a, b):

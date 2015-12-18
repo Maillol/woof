@@ -4,7 +4,15 @@ MSF is simple open source Python3 framework to develop API REST on database.
 
 ## Example
 
-### Define your resources
+Create a new project 
+
+```bash
+python3 -m msf startproject hotel
+```
+
+### Define your resources in models.py
+
+__File: hotel/hotel/models.py__
 
 ```python
 from msf.resource import Resource, StringField, IntegerField, ComposedBy
@@ -21,7 +29,9 @@ class Room(Resource):
     bed_count = IntegerField()
 ```
 
-### Define your entry point
+### Define your entry point in controllers.py
+
+__hotel/hotel/controllers.py__
 
 ```python
 from msf.url import EntryPoint
@@ -45,6 +55,14 @@ def delete_room(hotel_id, room_id):
         (Room.hotel_id == hotel_id) &
         (Room.id == room_id)))[0]
     old_room.delete()
+```
+
+### Create database and start your WSGI server such as gunicorn.
+
+```bash
+$ cd hotel
+$ python3 -m msf createdb demo.controllers
+$ gunicorn wsgi
 ```
 
 ## License
