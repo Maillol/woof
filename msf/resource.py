@@ -51,9 +51,8 @@ class MetaResource(type):
     """
 
     db = None
-    register = {} # {resource_class_name:
-                  #     (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
-
+    register = {}  # {resource_class_name:
+                   #    (ORM_cls, {refered_name_field: refered_resource_class_name, ...})}
     fields_types = {} # {name: {field_name: python_type_caster}}
 
     _starting_block = {}
@@ -64,7 +63,7 @@ class MetaResource(type):
 
             Meta:
                 weak_id = []
-                primary_key = [] # used by get_id_fields_names method and to push generated id after save.
+                primary_key = [] # used by get_id_fields_names method and to push generated id after save.
                 foreign_keys = []
                 required_resource_for_pk = []
                 association_meta_data = []

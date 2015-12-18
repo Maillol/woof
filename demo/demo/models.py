@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from msf.resource import (Resource,
                           association,
                           StringField,
@@ -29,4 +31,3 @@ class Person(Resource):
 class Rent(Resource):
     date = DateField(primary_key=True)
     nb_night = IntegerField()
-

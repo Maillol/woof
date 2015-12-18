@@ -1,0 +1,6 @@
+{
+    "database": {
+        "database": "demo.db",
+        "provider": "sqlite"
+    }
+}
