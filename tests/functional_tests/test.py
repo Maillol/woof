@@ -14,7 +14,6 @@ from io import BytesIO
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from msf.resource import MetaResource
 from msf.server import RESTServer, config
-from msf.db import DataBase
 
 
 class WSGIMockServer:
@@ -76,8 +75,7 @@ class TestCrud(unittest.TestCase):
                     '}'
                 '}' % os.path.join(cls.tmp_dir.name, 'test.db'))
 
-        database = config.database
-        MetaResource.initialize(database)
+        MetaResource.initialize(config.database)
         MetaResource.create_tables()
         application = RESTServer(root_url)
         cls.server = WSGIMockServer(application)
