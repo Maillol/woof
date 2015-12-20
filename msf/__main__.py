@@ -5,6 +5,7 @@ from .server import config
 import argparse
 import re
 import os
+import sys
 import importlib
 
 
@@ -130,12 +131,20 @@ def main():
                                   help='path to configuration file', dest="path_to_conf", type=path_exist)
     create_db_parser.set_defaults(func=create_db)
 
-    user_args = parser.parse_args()
-    if hasattr(user_args, 'func'):
-        user_args.func(user_args)
-    else:
-        parser.parse_args(['-h'])
+    try:
+        user_args = parser.parse_args()
+    except SystemExit:
+        return 1
+ 
+    try:
+        if hasattr(user_args, 'func'):
+            user_args.func(user_args)
+        else:
+            parser.parse_args(['-h'])
+    except:
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
