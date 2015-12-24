@@ -109,7 +109,7 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
     def save(table_name, field_names):
         return ('INSERT INTO {} ({}) VALUES ({});'
                 .format(table_name, ', '.join(field_names),
-                        ','.join('%s' * len(field_names))))
+                        ','.join(['%s'] * len(field_names))))
 
     @staticmethod
     def delete(table_name, id_names):
@@ -119,7 +119,13 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
 
 
 class MysqlTranslator(SQLTranslator):
-    pass
+
+    @staticmethod
+    def integer_field(field):
+        sql = SQLTranslator.integer_field(field)
+        if field.auto_increment:
+            sql += ' AUTO_INCREMENT'
+        return sql
 
 
 class SqliteTranslator(SQLTranslator):

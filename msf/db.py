@@ -22,9 +22,9 @@ class DataBase:
                              .format(', '.join(MetaConnectorAdapter.PROVIDERS)))
 
         self.sql_translator = MetaSQLTranslator.PROVIDERS[provider]
-        module = importlib.import_module(connector_adapter.PROVIDER_MODULE)
-        self.connector = module.connect
-        self.integrity_error = module.IntegrityError
+        self.module = importlib.import_module(connector_adapter.PROVIDER_MODULE)
+        self.connector = self.module.connect
+        self.integrity_error = self.module.IntegrityError
         self.connection_parameters = connector_adapter(connection_parameters).connection_parameters
 
     def execute(self, sql_query, parameters=()):
@@ -119,6 +119,7 @@ class SqliteConnectorAdapter(ConnectorAdapter):
 
 class MysqlConnectorAdapter(ConnectorAdapter):
     EXPECTED_ARGS = {'host': 'host',
+                     'port': 'port',
                      'user': 'user',
                      'password': 'password',
                      'database': 'db'}

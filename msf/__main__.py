@@ -7,6 +7,7 @@ import re
 import os
 import sys
 import importlib
+import traceback
 
 
 WSGI_TEMPLATE = """
@@ -54,7 +55,10 @@ def create_db(args):
     if args.path_to_conf is not None:
         os.environ.setdefault('MSF_CONFIG', args.path_to_conf)
 
-    importlib.import_module(args.ctrl)
+    if args.pypath is not None:
+        sys.path.insert(0, args.pypath)
+
+    controller = importlib.import_module(args.ctrl)
     MetaResource.initialize(config.database)
     MetaResource.create_tables()
 
@@ -118,6 +122,15 @@ def main():
             raise argparse.ArgumentTypeError(msg)
         return string
 
+    def path_to_module(string):
+        """
+        string must be a path to module through package name.
+        """
+        if re.match('^[a-z][\._a-z]+$', string) is None:
+            msg = "name must be all-lowercase names separate by dot"
+            raise argparse.ArgumentTypeError(msg)
+        return string
+
     parser = argparse.ArgumentParser('MSF')
     subparsers = parser.add_subparsers(help='sub-command help')
 
@@ -126,22 +139,25 @@ def main():
     start_project_parser.set_defaults(func=start_project)
 
     create_db_parser = subparsers.add_parser('createdb')
-    create_db_parser.add_argument("ctrl", metavar="controllers-module")
-    create_db_parser.add_argument("--conf", metavar="configuration file", action='store',
+    create_db_parser.add_argument("ctrl", metavar="controllers-module", type=path_to_module)
+    create_db_parser.add_argument("--conf", metavar="configuration-file", action='store',
                                   help='path to configuration file', dest="path_to_conf", type=path_exist)
+    create_db_parser.add_argument("--py-path", metavar="py-path", action='store',
+                                  help='path to python module', dest="pypath")
     create_db_parser.set_defaults(func=create_db)
 
     try:
         user_args = parser.parse_args()
     except SystemExit:
         return 1
- 
+
     try:
         if hasattr(user_args, 'func'):
             user_args.func(user_args)
         else:
             parser.parse_args(['-h'])
     except:
+        traceback.print_exc()
         return 1
     return 0
 

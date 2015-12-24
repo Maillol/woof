@@ -11,7 +11,7 @@ setup(
     author='Vincent MAILLOL',
     author_email='vincent.maillol@gmail.com',
     keywords='framework REST WSGI DATABASE ORM',
-    licence=msf.__license__,
+    license=msf.__license__,
     packages=['msf', 'msf.server'],
     entry_points={
         'console_scripts': [

@@ -135,7 +135,7 @@ class MetaResource(type):
                                         ' cannot have primary key because it is contained in ' + resource)
 
                     if not weak_entity.Meta.weak_id:
-                        mcs.add_field(weak_entity, 'weak_id', IntegerField(weak_id=True), 0)
+                        mcs.add_field(weak_entity, 'weak_id', IntegerField(weak_id=True, auto_increment=True), 0)
                     weak_entity.Meta.required_resource_for_pk = [resource]
 
     @classmethod
@@ -146,7 +146,7 @@ class MetaResource(type):
         """
         for resource_name, resource in MetaResource._starting_block.items():
             if not resource.Meta.weak_id and not resource.Meta.primary_key:
-                mcs.add_field(resource, 'id', IntegerField(primary_key=True), 0)
+                mcs.add_field(resource, 'id', IntegerField(primary_key=True, auto_increment=True), 0)
 
     @classmethod
     def _set_meta_foreign_key(mcs):
@@ -279,6 +279,14 @@ class MetaResource(type):
     def initialize(mcs, database):
         if not isinstance(database, DataBase):
             raise TypeError("Initialize's parameter must be DataBase object")
+
+        if database.module.paramstyle == 'format':
+            Condition.substitution = '%s'
+        elif  database.module.paramstyle == 'qmark':
+            Condition.substitution = '?'
+        else:
+            raise TypeError('Not supported paramstyle')
+
         mcs._generate_weak_id_if_not_exist()
         mcs._generate_primary_key_if_not_exist()
         for resource in MetaResource._starting_block.values():
@@ -440,7 +448,7 @@ class Condition(object):
             self.user_input.append(other)
 
     def __eq__(self, other):
-        self.sql.append("==")
+        self.sql.append("=")
         self._update(other)
         return self
 
@@ -540,8 +548,9 @@ class IntegerField(ScalarField):
     to_py_factory = int
 
     def __init__(self, writable=True, readable=True, unique=False, nullable=False, primary_key=False, weak_id=False,
-                 min_value=-2147483648, max_value=2147483647):
+                 min_value=-2147483648, max_value=2147483647, auto_increment=False):
         super().__init__(writable, readable, unique, nullable, primary_key, weak_id)
+        self.auto_increment = auto_increment
         try:
             self.min_value = int(min_value)
         except ValueError:

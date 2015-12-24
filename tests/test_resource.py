@@ -13,6 +13,7 @@ import msf.resource
 
 class MockedDataBase(msf.resource.DataBase):
     calls = []
+    module = type('MockModule', (), {'paramstyle': 'qmark'})
 
     def __init__(self, *args):
         self.sql_translator = msf.sqltranslator.SQLTranslator
