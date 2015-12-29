@@ -101,6 +101,13 @@ class TestCrud(unittest.TestCase):
         books = self.server.get('/api/books', '')
         self.AssertJsonEqual(books, self.saved_books)
 
+    def test_04_update_books(self):
+        book = dict(title='Martine go to the cinema',
+                    abstract='Martine go to the cinema with Chuck Noris')
+        updated = self.server.put('/api/books/1', '', json.dumps(book))
+        book.update(dict(id=1, chapters=[]))
+        self.AssertJsonEqual(updated, book)
+
     @classmethod
     def tearDownClass(cls):
         cls.tmp_dir.cleanup()

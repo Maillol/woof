@@ -50,13 +50,13 @@ mysql_port=$(docker inspect --format '{{ (index (index .NetworkSettings.Ports "3
 sleep 6
 
 docker run --name wsgi -p 127.0.0.1:80:8000 --link mysql_db $wsgi_img_id &
-#if [ $? != 0 ]; then
-#    rm $output
-#    clean_container
-#    exit 1;
-#else
+if [ $? != 0 ]; then
+    rm $output
+    clean_container
+    exit 1;
+else
     echo "WSGI running"
-#fi
+fi
 
 sleep 6
 python3 -m unittest test

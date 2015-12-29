@@ -395,6 +395,20 @@ class Resource(metaclass=MetaResource):
             if field.name == 'id':
                self.id = last_id
 
+    def update(self):
+        fields = []
+        values = []
+        for field, value in self._state.items():
+            fields.append(field)
+            values.append(value)
+
+        for field_name in self._id_fields_names:
+            values.append(self._state[field_name])
+
+        db = type(type(self)).db
+        sql = db.sql_translator.update(self._table_name, fields, self._id_fields_names)
+        db.execute(sql, values)
+
     def delete(self):
         values = []
         for field_name in self._id_fields_names:

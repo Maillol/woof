@@ -199,6 +199,9 @@ class EntryPoint:
         decorator = self.post(resources_url)
         decorator(PostControllerBuilder(resource))
 
+        decorator = self.put(single_resource_url)
+        decorator(PutControllerBuilder(resource))
+
         decorator = self.delete(single_resource_url)
         decorator(DeleteControllerBuilder(resource))
 
@@ -242,6 +245,25 @@ class PostControllerBuilder:
     def __call__(self, body):
         instance = self.resource(**body)
         instance.save()
+        return instance
+
+
+class PutControllerBuilder:
+    """
+    Generate controller for put resources request.
+    """
+
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __call__(self, body, *args):
+        field_name = self.resource._id_fields_names[0]
+        body[field_name] = args[0]
+        for i, field_name in enumerate(self.resource._id_fields_names[1:], 1):
+            body[field_name] == args[i]
+
+        instance = self.resource(**body)
+        instance.update()
         return instance
 
 

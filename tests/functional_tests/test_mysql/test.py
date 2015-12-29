@@ -17,3 +17,16 @@ class TestCrud(unittest.TestCase):
         response = requests.post(URL + "/hotels", json=hotel)
         hotel.update(dict(id=1, rooms=[]))
         self.assertEqual(response.json(), hotel)
+
+    def test_002_select_one_hotel(self):
+        expected = dict(id=1, name="Koalas",
+                        address="45 horse street", rooms=[])
+        response = requests.get(URL + "/hotels/1")
+        self.assertEqual(response.json(), expected)
+
+    def test_003_update_hotel(self):
+        hotel = dict(name="The horse", address="45 horse street")
+        response = requests.put(URL + "/hotels/1", json=hotel)
+        hotel.update(dict(id=1, rooms=[]))
+        self.assertEqual(response.json(), hotel)
+

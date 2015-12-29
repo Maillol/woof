@@ -99,9 +99,9 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                controller(self._parse_body(environ), *parameters)
+                resource = controller(self._parse_body(environ), *parameters)
                 code = '200 Updated'
-                body = b'""'
+                body = json.dumps(resource.to_dict()).encode('utf-8')
 
             elif method == 'DELETE':
                 try:

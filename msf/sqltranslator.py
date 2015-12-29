@@ -19,7 +19,7 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
 
     @classmethod
     def create_schema(cls, table_name, fields, primary_key_field_name=[]):
-        field_def = ', '.join(cls.field_definition(field) for field in fields) 
+        field_def = ', '.join(cls.field_definition(field) for field in fields)
         pk_def = cls.translate_pk(primary_key_field_name)
         return "CREATE TABLE {table_name}({field_def}{pk_def});".format(**locals())
 
@@ -53,7 +53,7 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
 
         values = {k: getattr(field, k) for k in dir(field) if not k.startswith('_')}
         if field.nullable:
-            values['null'] = 'NULL'        
+            values['null'] = 'NULL'
         else:
             values['null'] = 'NOT NULL'
         values.update(vars(field))
@@ -68,29 +68,29 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
         return '{name} BLOB  {null}'
 
     @staticmethod
-    def date_field(field): 
+    def date_field(field):
         return '{name} DATE {null}'
 
     @staticmethod
-    def date_time_field(field): 
+    def date_time_field(field):
         return '{name} DATETIME {null}'
 
     @staticmethod
-    def numeric_field(field): 
+    def numeric_field(field):
         return '{name} NUMERIC({precision}, {scale}) {null}'
 
     @staticmethod
     def integer_field(field):
         if field.min_value < 0:
             if field.min_value >= -32768 and field.max_value <= 32767:
-                sql = '{name} SMALLINT {null}'            
+                sql = '{name} SMALLINT {null}'
             elif field.min_value >= -2147483648 and field.max_value <= 2147483647:
                 sql = '{name} INTEGER {null}'
             else:
                 sql = '{name} BIGINT {null}'
         else:
             if field.max_value <= 65535:
-                sql = '{name} SMALLINT UNSIGNED {null}'            
+                sql = '{name} SMALLINT UNSIGNED {null}'
             elif field.max_value <= 4294967295:
                 sql = '{name} INTEGER UNSIGNED {null}'
             else:
@@ -98,7 +98,7 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
         return sql
 
     @staticmethod
-    def string_field(field): 
+    def string_field(field):
         if field.fixe_length:
             sql = "{name} CHAR({length}) {null}"
         else:
@@ -112,9 +112,18 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
                         ','.join(['%s'] * len(field_names))))
 
     @staticmethod
+    def update(table_name, field_names, id_names):
+        set_expression = ', '.join("{} = %s".format(name)
+                                  for name in field_names)
+        where_criteria = " AND ".join(
+            "{} = %s".format(id_name) for id_name in id_names)
+        return ("UPDATE {} SET {} WHERE {}"
+                .format(table_name, set_expression, where_criteria))
+
+    @staticmethod
     def delete(table_name, id_names):
         where_criteria = " AND ".join(
-            "{} == %s".format(id_name) for id_name in id_names)
+            "{} = %s".format(id_name) for id_name in id_names)
         return "DELETE FROM {} WHERE {};".format(table_name, where_criteria)
 
 
@@ -137,6 +146,15 @@ class SqliteTranslator(SQLTranslator):
         return ('INSERT INTO {} ({}) VALUES ({});'
                 .format(table_name, ', '.join(field_names),
                         ','.join('?' * len(field_names))))
+
+    @staticmethod
+    def update(table_name, field_names, id_names):
+        set_expression = ','.join("{} = ?".format(name)
+                                  for name in field_names)
+        where_criteria = " AND ".join(
+            "{} == ?".format(id_name) for id_name in id_names)
+        return ("UPDATE {} SET {} WHERE {}"
+                .format(table_name, set_expression, where_criteria))
 
     @staticmethod
     def delete(table_name, id_names):
