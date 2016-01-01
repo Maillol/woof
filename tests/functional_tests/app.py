@@ -13,13 +13,15 @@ class Book(Resource):
 
 class Chapter(Resource):
     number = IntegerField(weak_id=True)
+    title = StringField()
 
 
 # controllers.py
 root_url = EntryPoint('/api')
 root_url.crud('/books/[id]', Book)
+root_url.crud('/books/{book_id}/chapters/[number]', Chapter)
 
-
+"""
 @root_url.post('/books/{book_id}/chapters')
 def create_chapter(body, book_id):
     body["book_id"] = book_id
@@ -44,4 +46,4 @@ def delete_chapter(book_id, chapter_id):
         (Chapter.book_id == book_id) &
         (Chapter.id == chapter_id)))[0]
     book.delete()
-
+"""

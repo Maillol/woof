@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import inspect
+
 
 class _PathParameter:
     """
@@ -7,7 +9,7 @@ class _PathParameter:
     """
 
     def __init__(self, name):
-        self.name = name
+        self.name = name[1:-1]
 
     def __repr__(self):
         return 'P({})'.format(self.name)
@@ -24,8 +26,8 @@ class URLPathTree:
     i.e:
         This path template:
             /hotel/{hotel_name}/rooms/{room_id}
-        
-        matches this path: 
+
+        matches this path:
             /hotel/california/room/43
     """
 
@@ -42,6 +44,23 @@ class URLPathTree:
     def __init__(self):
         self._root = URLPathTree.Node('')
 
+    @staticmethod
+    def _validate_ctrl(ctrl, url):
+        try:
+            argspec = inspect.getfullargspec(ctrl)
+        except TypeError:
+            raise TypeError("{} isn't callable".format(ctrl))
+
+        if argspec.varkw is None:
+            if argspec.args and argspec.args[0] == 'self':
+                del argspec.args[0]
+
+            for word in url.split('/'):
+                if word.startswith('{'):
+                    if word[1:-1] not in argspec.args:
+                        raise TypeError("{} must have '{}' argument"
+                                        .format(ctrl, word[1:-1]))
+
     def add(self, url, ctrl):
         """
         Assigne ctrl to a url in the tree.
@@ -54,6 +73,8 @@ class URLPathTree:
         else:
             raise ValueError("URL '{}' already linked with {}"
                              .format(url, found_ctrl))
+
+        self._validate_ctrl(ctrl, url)
 
         current_node = self._root
         for url_dir in url.split('/')[1:]:
@@ -71,7 +92,7 @@ class URLPathTree:
 
     def get(self, url):
         """
-        Search url in the tree and a 2-tuple wich contains ctrl 
+        Search url in the tree and a 2-tuple wich contains ctrl
         and list of parameters. If url isn't found LookupError is raised
         with url in args[1]
         """
@@ -83,7 +104,8 @@ class URLPathTree:
 
             for node in node.children:
                 if isinstance(node.value, _PathParameter):
-                    result = walk(path[1:], node, values + path[:1])
+                    values[node.value.name] = path[0]
+                    result = walk(path[1:], node, values)
                     if result is not None:
                         return result
                 elif node.value == path[0]:
@@ -92,7 +114,7 @@ class URLPathTree:
                         return result
 
         path = url.split('/')
-        result = walk(path[1:], self._root, [])
+        result = walk(path[1:], self._root, {})
         if result is None:
             raise LookupError("URL not found", url)
         return result
@@ -214,11 +236,11 @@ class GetSingleControllerBuilder:
     def __init__(self, resource):
         self.resource = resource
 
-    def __call__(self, *args):
+    def __call__(self, **kwargs):
         field = self.resource._id_fields_names[0]
-        where_clause = getattr(self.resource, field) == args[0]
-        for i, field in enumerate(self.resource._id_fields_names[1:], 1):
-            where_clause &= getattr(self.resource, field) == args[i]
+        where_clause = getattr(self.resource, field) == kwargs[field]
+        for field in self.resource._id_fields_names[1:]:
+            where_clause &= getattr(self.resource, field) == kwargs[field]
 
         return self.resource.select().where(where_clause)
 
@@ -229,9 +251,28 @@ class GetControllerBuilder:
     """
     def __init__(self, resource):
         self.resource = resource
+        self.resource.on_initialized.append(self.on_initialized)
 
-    def __call__(self, *args):
-        return self.resource.select()
+    def on_initialized(self):
+        weak_id = [field.name for field in self.resource.Meta.weak_id]
+        if weak_id:
+            self.inherited_ids = [field_name
+                                  for field_name
+                                  in self.resource._id_fields_names
+                                  if field_name not in weak_id]
+        else:
+            self.inherited_ids = []
+
+    def __call__(self, **kwargs):
+        if self.inherited_ids:
+            field = self.inherited_ids[0]
+            where_clause = getattr(self.resource, field) == kwargs[field]
+            for field in self.inherited_ids[1:]:
+                where_clause &= getattr(self.resource, field) == kwargs[field]
+            return self.resource.select().where(where_clause)
+
+        else:
+            return self.resource.select()
 
 
 class PostControllerBuilder:
@@ -241,8 +282,24 @@ class PostControllerBuilder:
 
     def __init__(self, resource):
         self.resource = resource
+        self.resource.on_initialized.append(self.on_initialized)
 
-    def __call__(self, body):
+    def on_initialized(self):
+        weak_id = [field.name for field in self.resource.Meta.weak_id]
+        if weak_id:
+            self.inherited_ids = [field_name
+                                  for field_name
+                                  in self.resource._id_fields_names
+                                  if field_name not in weak_id]
+        else:
+            self.inherited_ids = []
+
+    def __call__(self, body, **kwargs):
+        for name in self.inherited_ids:
+            body[name] = kwargs[name]
+        return self._save(body)
+
+    def _save(self, body):
         instance = self.resource(**body)
         instance.save()
         return instance
@@ -255,12 +312,18 @@ class PutControllerBuilder:
 
     def __init__(self, resource):
         self.resource = resource
+        self.resource.on_initialized.append(self.on_initialized)
 
-    def __call__(self, body, *args):
-        field_name = self.resource._id_fields_names[0]
-        body[field_name] = args[0]
-        for i, field_name in enumerate(self.resource._id_fields_names[1:], 1):
-            body[field_name] == args[i]
+    def on_initialized(self):
+        weak_id = [field.name for field in self.resource.Meta.weak_id]
+        self.inherited_ids = [field_name
+                              for field_name
+                              in self.resource._id_fields_names
+                              if field_name not in weak_id]
+
+    def __call__(self, body, **kwargs):
+        for field_name in self.inherited_ids:
+            body[field_name] = kwargs[field_name]
 
         instance = self.resource(**body)
         instance.update()
@@ -275,11 +338,11 @@ class DeleteControllerBuilder:
     def __init__(self, resource):
         self.resource = resource
 
-    def __call__(self, *args):
+    def __call__(self, **kwargs):
         field = self.resource._id_fields_names[0]
-        where_clause = getattr(self.resource, field) == args[0]
-        for i, field in enumerate(self.resource._id_fields_names[1:], 1):
-            where_clause &= getattr(self.resource, field) == args[i]
+        where_clause = getattr(self.resource, field) == kwargs[field]
+        for field in self.resource._id_fields_names[1:]:
+            where_clause &= getattr(self.resource, field) == kwargs[field]
 
         instance = list(self.resource.select().where(where_clause))[0]
         instance.delete()

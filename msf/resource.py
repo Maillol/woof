@@ -57,6 +57,8 @@ class MetaResource(type):
 
     _starting_block = {}
 
+    on_initialized = []
+
     def _init_nested_meta(cls):
         """
         Initializes nested class in Resource class.
@@ -295,6 +297,10 @@ class MetaResource(type):
         mcs._set_register()
         mcs._name_to_ref()
         mcs.db = database
+
+        for callback in mcs.on_initialized:
+            callback()
+        on_initialized = []
 
     @classmethod
     def clear(mcs):

@@ -62,7 +62,7 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                resources = tuple(controller(*parameters))
+                resources = tuple(controller(**parameters))
                 if hasattr(controller, 'single') and controller.single:
                     if resources:
                         code = '200 OK'
@@ -88,7 +88,7 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                resource = controller(self._parse_body(environ), *parameters)
+                resource = controller(self._parse_body(environ), **parameters)
                 #response_headers.append(('Location', resource_location))
                 code = '200 Created'
                 body = json.dumps(resource.to_dict()).encode('utf-8')
@@ -99,7 +99,7 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                resource = controller(self._parse_body(environ), *parameters)
+                resource = controller(self._parse_body(environ), **parameters)
                 code = '200 Updated'
                 body = json.dumps(resource.to_dict()).encode('utf-8')
 
@@ -109,7 +109,7 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                controller(*parameters)
+                controller(**parameters)
                 code = '200 Deleted'
                 body = b'""'
 

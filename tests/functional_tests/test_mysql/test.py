@@ -30,3 +30,30 @@ class TestCrud(unittest.TestCase):
         hotel.update(dict(id=1, rooms=[]))
         self.assertEqual(response.json(), hotel)
 
+    def test_004_select_hotel(self):
+        expected = dict(id=1, name="The horse",
+                        address="45 horse street", rooms=[])
+        response = requests.get(URL + "/hotels/1")
+        self.assertEqual(response.json(), expected)
+
+    def test_005_select_hotels(self):
+        expected = [dict(id=1, name="The horse",
+                         address="45 horse street", rooms=[])]
+        response = requests.get(URL + "/hotels")
+        self.assertEqual(response.json(), expected)
+
+    def test_006_add_rooms_to_hotel(self):
+        room = dict(number=1, bed_count=4)
+        response = requests.post(URL + "/hotels/1/rooms", json=room)
+        room.update(dict(hotel_id=1))
+        self.assertEqual(response.json(), room)
+
+    def test_007_select_hotel(self):
+        expected = dict(id=1, name="The horse",
+                        address="45 horse street",
+                        rooms=[dict(number=1,
+                                    hotel_id=1,
+                                    bed_count=4)])
+
+        response = requests.get(URL + "/hotels/1")
+        self.assertEqual(response.json(), expected)
