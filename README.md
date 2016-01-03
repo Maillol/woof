@@ -1,13 +1,13 @@
-## MSF - WSGI REST Framework
+## Woof - WSGI REST Framework
 
-MSF is simple open source Python3 framework to develop API REST on database.
+Woof is simple open source Python3 framework to develop API REST on database.
 
 ## Example
 
 Create a new project 
 
 ```bash
-python3 -m msf startproject hotel
+woof startproject hotel
 ```
 
 ### Define your resources in models.py
@@ -15,7 +15,7 @@ python3 -m msf startproject hotel
 __File: hotel/hotel/models.py__
 
 ```python
-from msf.resource import Resource, StringField, IntegerField, ComposedBy
+from woof.resource import Resource, StringField, IntegerField, ComposedBy
 
 
 class Hotel(Resource):
@@ -34,12 +34,12 @@ class Room(Resource):
 __hotel/hotel/controllers.py__
 
 ```python
-from msf.url import EntryPoint
+from woof.url import EntryPoint
 from models import Hotel, Room
 
 root_url = EntryPoint('/api')  # Define API URL.
 
-root_url.crud('/hotels/[hotel_id]', Hotel)  # Generate controllers using resource.
+root_url.crud('/hotels/[id]', Hotel)  # Generate controllers using resource.
 
 # Or write specific controllers
 @root_url.post('/hotels/{hotel_id}/rooms')
@@ -61,7 +61,7 @@ def delete_room(hotel_id, room_id):
 
 ```bash
 $ cd hotel
-$ python3 -m msf createdb demo.controllers
+$ woof createdb demo.controllers
 $ gunicorn wsgi
 ```
 

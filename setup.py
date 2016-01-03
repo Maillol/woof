@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
  
 from setuptools import setup, find_packages
-import msf
+import woof
 
 setup(
-    name='msf',
+    name='woof',
     description = 'Framework to develop API REST',
-    version=msf.__version__,
+    version=woof.__version__,
     plateformes='ALL',
     author='Vincent MAILLOL',
     author_email='vincent.maillol@gmail.com',
     keywords='framework REST WSGI DATABASE ORM',
-    license=msf.__license__,
-    packages=['msf', 'msf.server'],
+    license=woof.__license__,
+    packages=['woof', 'woof.server'],
     entry_points={
         'console_scripts': [
-            'msf = msf.__main__:main',
+            'woof = woof.__main__:main',
         ]
     }
 )

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-from msf.resource import (Resource,
-                          association,
-                          StringField,
-                          IntegerField,
-                          ComposedBy,
-                          DateField)
+from woof.resource import (Resource,
+                           association,
+                           StringField,
+                           IntegerField,
+                           ComposedBy,
+                           DateField)
 
 
 class Hotel(Resource):

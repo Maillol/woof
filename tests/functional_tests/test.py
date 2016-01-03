@@ -12,8 +12,8 @@ from wsgiref.util import setup_testing_defaults
 from io import BytesIO
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from msf.resource import MetaResource
-from msf.server import RESTServer, config
+from woof.resource import MetaResource
+from woof.server import RESTServer, config
 
 
 class WSGIMockServer:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from msf.url import EntryPoint
+from woof.url import EntryPoint
 from .models import Hotel, Person, Room
 
 root_url = EntryPoint('/api')

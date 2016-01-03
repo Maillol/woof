@@ -156,7 +156,7 @@ class ConfigReader:
         self.clear_config()
         cls = type(self)
         cls.path_to_conf = os.environ.get(
-            'MSF_CONFIG_FILE', os.path.abspath(cls.FILE_NAME))
+            'WOOF_CONFIG_FILE', os.path.abspath(cls.FILE_NAME))
         with open(cls.path_to_conf, 'r') as config_file:
             configuration = json.load(config_file)
 

@@ -18,11 +18,11 @@ import os
 
 PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PATH)
-os.environ.setdefault('MSF_CONFIG', os.path.join(PATH, 'conf.json'))
+os.environ.setdefault('WOOF_CONFIG', os.path.join(PATH, 'conf.json'))
 
 from {args.project_name}.controllers import root_url
-from msf.server import RESTServer, config
-from msf.resource import MetaResource
+from woof.server import RESTServer, config
+from woof.resource import MetaResource
 
 MetaResource.initialize(config.database)
 
@@ -41,7 +41,7 @@ CONF_TEMPLATE = """
 CTRL_TEMPLATE = """
 #!/usr/bin/env python3
 
-from msf.url import EntryPoint
+from woof.url import EntryPoint
 # from .models import ...
 
 root_url = EntryPoint('/api')
@@ -53,7 +53,7 @@ def create_db(args):
     Read configuration file and create database.
     """
     if args.path_to_conf is not None:
-        os.environ.setdefault('MSF_CONFIG', args.path_to_conf)
+        os.environ.setdefault('WOOF_CONFIG', args.path_to_conf)
 
     if args.pypath is not None:
         sys.path.insert(0, args.pypath)
@@ -91,7 +91,7 @@ def start_project(args):
     with open(conf_file_name, "w") as file:
         file.write(CONF_TEMPLATE)
     with open(models_file_name, "w") as file:
-        file.write("from msf.resource import Resource")
+        file.write("from woof.resource import Resource")
     with open(ctrl_file_name, "w") as file:
         file.write(CTRL_TEMPLATE)
 
@@ -131,7 +131,7 @@ def main():
             raise argparse.ArgumentTypeError(msg)
         return string
 
-    parser = argparse.ArgumentParser('MSF')
+    parser = argparse.ArgumentParser('Woof')
     subparsers = parser.add_subparsers(help='sub-command help')
 
     start_project_parser = subparsers.add_parser('startproject')

@@ -10,11 +10,11 @@ function clean_container {
     rm -rf build
 }
 
-echo 'Build msf...'
-mkdir -p build/msf
-cp -r ../../../msf ../../../setup.py build/msf
+echo 'Build woof...'
+mkdir -p build/woof
+cp -r ../../../woof ../../../setup.py build/woof
 cd build
-tar -caf msf.tar.gz msf
+tar -caf woof.tar.gz woof
 cd ../
 
 echo 'Build demo wsgi application...'

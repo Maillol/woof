@@ -6,17 +6,17 @@ from decimal import Decimal
 import unittest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from msf.resource import *
-import msf.sqltranslator
-import msf.resource
+from woof.resource import *
+import woof.sqltranslator
+import woof.resource
 
 
-class MockedDataBase(msf.resource.DataBase):
+class MockedDataBase(woof.resource.DataBase):
     calls = []
     module = type('MockModule', (), {'paramstyle': 'qmark'})
 
     def __init__(self, *args):
-        self.sql_translator = msf.sqltranslator.SQLTranslator
+        self.sql_translator = woof.sqltranslator.SQLTranslator
 
     def connect(self, *args):
         ...

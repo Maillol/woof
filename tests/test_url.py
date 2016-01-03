@@ -5,7 +5,7 @@ import os
 import unittest
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from msf.url import EntryPoint, URLPathTree
+from woof.url import EntryPoint, URLPathTree
 
 
 def hotels():

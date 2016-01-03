@@ -11,7 +11,7 @@ echo '{"database": ' \
          '"user": "'$MYSQL_DB_ENV_MYSQL_USER'"}' \
      '}' > config.json
 
-msf createdb demo.controllers --py-path $PWD
+woof createdb demo.controllers --py-path $PWD
 
 python3 -c "from wsgiref.simple_server import make_server; \
             from wsgi import application; \

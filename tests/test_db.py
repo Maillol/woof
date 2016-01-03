@@ -5,7 +5,7 @@ import os
 import unittest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from msf.db import ConnectorAdapter, MetaConnectorAdapter
+from woof.db import ConnectorAdapter, MetaConnectorAdapter
 
 
 class TestMetaConnectorAdapter(unittest.TestCase):

@@ -6,9 +6,9 @@ import unittest
 from datetime import date
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from msf.resource import *
-from msf.db import IntegrityError
-from msf.db import DataBase
+from woof.resource import *
+from woof.db import IntegrityError
+from woof.db import DataBase
 
 
 class TestWithHotelSchema(unittest.TestCase):
