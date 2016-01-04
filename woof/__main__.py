@@ -30,12 +30,12 @@ application = RESTServer(root_url)
 """.lstrip()
 
 CONF_TEMPLATE = """
-{
-  "database": {
-    "database": "demo.db",
+{{
+  "database": {{
+    "database": "{args.project_name}.db",
     "provider": "sqlite"
-  }
-}
+  }}
+}}
 """
 
 CTRL_TEMPLATE = """
@@ -89,7 +89,7 @@ def start_project(args):
     with open(wsgi_file_name, "w") as file:
         file.write(WSGI_TEMPLATE.format(args=args))
     with open(conf_file_name, "w") as file:
-        file.write(CONF_TEMPLATE)
+        file.write(CONF_TEMPLATE.format(args=args))
     with open(models_file_name, "w") as file:
         file.write("from woof.resource import Resource")
     with open(ctrl_file_name, "w") as file:
