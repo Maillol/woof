@@ -3,18 +3,19 @@
 import sys
 import os
 import unittest
+import tempfile
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from woof.server.config import (ConfigIsNotValidError, ChoiceValidator, IntValidator,
-                               FloatValidator, StrValidator, DictValidator, 
-                               ListValidator, TranstypingValidator)
+                                FloatValidator, StrValidator, DictValidator, 
+                                ListValidator, TranstypingValidator, ConfigReader)
 
 
 def stub_constructor(a, b):
     return (a, b)
 
 
-class TestMetaConnectorAdapter(unittest.TestCase):
+class TestConfValidator(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -121,6 +122,61 @@ class TestMetaConnectorAdapter(unittest.TestCase):
         except ConfigIsNotValidError:
             self.fail("valid() raised ConfigIsNotValidError unexpectedly!")
 
-        
-        
+
+class TestReadConf(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.original_validator = ConfigReader.VALIDATOR
+        ConfigReader.VALIDATOR = DictValidator(children={
+            'a': IntValidator(int_min=3, int_max=7),
+            'b': FloatValidator(float_min=3, float_max=7)
+        })
+
+        cls.config = ConfigReader()
+
+    def tearDown(self):
+        self.config.clear_config()
+
+    def test_read_defaut_file(self):
+        tmpdir = tempfile.mkdtemp()
+        path_to_conf = os.path.join(tmpdir, self.config.DEFAULT_FILE_NAME)
+        current_work_dir = os.getcwd()
+        try:
+            with open(path_to_conf, 'w') as conf:
+                conf.write('{"a": 4, "b": 5.2}')
+
+            with self.assertRaises(FileNotFoundError):
+                self.config.a
+
+            os.chdir(tmpdir)
+            self.assertEqual(self.config.a, 4)
+            self.assertEqual(self.config.b, 5.2)
+
+        finally:
+            os.remove(path_to_conf)
+            os.rmdir(tmpdir)
+            os.chdir(current_work_dir)
+
+    def test_read_file_using_environ_variable(self):
+        with tempfile.NamedTemporaryFile() as conf:
+            conf.write(b'{"a": 4, "b": 5.2}')
+            conf.flush()
+
+            with self.assertRaises(FileNotFoundError):
+                self.config.a
+
+            os.environ[self.config.ENVIRON_VAR_NAME] = conf.name
+            try:
+                self.assertEqual(self.config.a, 4)
+                self.assertEqual(self.config.b, 5.2)
+                self.assertEqual(self.config.path_to_conf, conf.name)
+
+            finally:
+                del os.environ[self.config.ENVIRON_VAR_NAME]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.original_validator = ConfigReader.VALIDATOR
+
 

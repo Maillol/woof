@@ -150,7 +150,8 @@ class TranstypingValidator:
 
 class ConfigReader:
 
-    FILE_NAME = 'config.json'
+    DEFAULT_FILE_NAME = 'config.json'
+    ENVIRON_VAR_NAME = 'WOOF_CONFIG_FILE'
     VALIDATOR = None
     _not_loaded = True
 
@@ -158,7 +159,8 @@ class ConfigReader:
         self.clear_config()
         cls = type(self)
         cls.path_to_conf = os.environ.get(
-            'WOOF_CONFIG_FILE', os.path.abspath(cls.FILE_NAME))
+            cls.ENVIRON_VAR_NAME, os.path.abspath(cls.DEFAULT_FILE_NAME))
+
         with open(cls.path_to_conf, 'r') as config_file:
             configuration = json.load(config_file)
 
@@ -166,20 +168,18 @@ class ConfigReader:
             raise ConfigIsNotValidError(
                 "'{}' config file must contain a json dict".format(cls.path_to_conf))
 
-        clean = cls.VALIDATOR.valid(configuration)
-
-        for key, value in clean.items():
-            setattr(self, key, value)
+        self.__dict__ = cls.VALIDATOR.valid(configuration)
+        type(self)._not_loaded = False
 
     def clear_config(self):
-        for key in vars(self).copy().keys():
-            delattr(self, key)
+        self.__dict__.clear()
+        type(self)._not_loaded = True
 
     def __getattr__(self, name):
         if type(self)._not_loaded:
             self.reload_config()
-            type(self)._not_loaded = False
             return getattr(self, name)
+        raise AttributeError("config has no attribute '{}'".format(name))
 
 
 ConfigReader.VALIDATOR = DictValidator(children={

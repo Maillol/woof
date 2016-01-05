@@ -5,7 +5,7 @@ import os
 
 PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PATH)
-os.environ.setdefault('WOOF_CONFIG', os.path.join(PATH, 'conf.json'))
+os.environ.setdefault('WOOF_CONFIG_FILE', os.path.join(PATH, 'config.json'))
 
 from demo.controllers import root_url
 from woof.server import RESTServer, config

@@ -1,5 +1,6 @@
 __pycache__
 *.pyc
 *.db
-parse.py
-se.py
+build/
+dist/
+

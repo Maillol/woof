@@ -2,6 +2,7 @@
 
 from .resource import MetaResource
 from .server import config
+from wsgiref.simple_server import make_server
 import argparse
 import re
 import os
@@ -18,16 +19,18 @@ import os
 
 PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PATH)
-os.environ.setdefault('WOOF_CONFIG', os.path.join(PATH, 'conf.json'))
+os.environ.setdefault('{var_name}', os.path.join(PATH, '{conf_file_name}'))
 
-from {args.project_name}.controllers import root_url
+from {{args.project_name}}.controllers import root_url
 from woof.server import RESTServer, config
 from woof.resource import MetaResource
 
 MetaResource.initialize(config.database)
 
 application = RESTServer(root_url)
-""".lstrip()
+""".lstrip().format(var_name=config.ENVIRON_VAR_NAME,
+                    conf_file_name=config.DEFAULT_FILE_NAME)
+
 
 CONF_TEMPLATE = """
 {{
@@ -36,7 +39,7 @@ CONF_TEMPLATE = """
     "provider": "sqlite"
   }}
 }}
-"""
+""".lstrip()
 
 CTRL_TEMPLATE = """
 #!/usr/bin/env python3
@@ -53,13 +56,32 @@ def create_db(args):
     Read configuration file and create database.
     """
     if args.path_to_conf is not None:
-        os.environ.setdefault('WOOF_CONFIG_FILE', args.path_to_conf)
+        os.environ[config.ENVIRON_VAR_NAME] = args.path_to_conf
 
     if args.pypath is not None:
-        sys.path.insert(0, os.path.abspath(args.pypath))
-    controller = importlib.import_module(args.ctrl)
+        sys.path.insert(0, args.pypath)
+
+    controller = importlib.import_module(args.application + '.controllers')
     MetaResource.initialize(config.database)
     MetaResource.create_tables()
+
+
+def run_server(args):
+    """
+    Launch the development server.
+    """
+
+    if args.path_to_conf is not None:
+        os.environ[config.ENVIRON_VAR_NAME] = args.path_to_conf
+
+    else:
+        os.environ.setdefault(config.ENVIRON_VAR_NAME,
+                              os.path.join(args.project_dir, config.DEFAULT_FILE_NAME))
+
+    sys.path.insert(0, args.project_dir)
+    wsgi = importlib.import_module('wsgi')
+    server = make_server('', args.port, wsgi.application)
+    server.serve_forever()
 
 
 def start_project(args):
@@ -71,7 +93,7 @@ def start_project(args):
         |    +-- __init__.py
         |    +-- controllers.py
         |    +-- models.py
-        +-- conf.json
+        +-- config.json
         +-- wsgi.py
     """
     pkg = args.project_name
@@ -80,7 +102,7 @@ def start_project(args):
     os.mkdir(pkg)
     os.mkdir(sub_pkg)
     wsgi_file_name = os.path.join(pkg, 'wsgi.py')
-    conf_file_name = os.path.join(pkg, 'config.json')
+    conf_file_name = os.path.join(pkg, config.DEFAULT_FILE_NAME)
     models_file_name = os.path.join(sub_pkg, 'models.py')
     ctrl_file_name = os.path.join(sub_pkg, 'controllers.py')
 
@@ -112,54 +134,75 @@ def main():
             raise argparse.ArgumentTypeError(msg)
         return string
 
-    def path_exist(string):
+    class PathExist:
         """
-        string must be an existing file.
+        Factory to test if path is an existing file or directory
         """
-        if not os.path.isfile(string):
-            msg = "'{}' isn't file".format(string)
-            raise argparse.ArgumentTypeError(msg)
-        return string
 
-    def path_to_module(string):
-        """
-        string must be a path to module through package name.
-        """
-        if re.match('^[a-z][\._a-z]+$', string) is None:
-            msg = "name must be all-lowercase names separate by dot"
-            raise argparse.ArgumentTypeError(msg)
-        return string
+        def __init__(self, is_dir=False):
+            """
+            String must be an existing file or dir if is_dir is true
+            """
+            self.dir_expected = is_dir
+            self.file_expected = not is_dir
+
+        def __call__(self, string):
+            """
+            Return absolute path of string if string is an existing path.
+            """
+            if self.dir_expected and not os.path.isdir(string):
+                msg = "'{}' isn't directory".format(string)
+                raise argparse.ArgumentTypeError(msg)
+
+            if self.file_expected and not os.path.isfile(string):
+                msg = "'{}' isn't file".format(string)
+                raise argparse.ArgumentTypeError(msg)
+
+            return os.path.abspath(string)
 
     parser = argparse.ArgumentParser('Woof')
     subparsers = parser.add_subparsers(help='sub-command help')
 
     start_project_parser = subparsers.add_parser('startproject')
-    start_project_parser.add_argument("project_name", metavar="project-name",  type=module_name)
+    start_project_parser.add_argument("project_name", metavar="project-name", type=module_name)
     start_project_parser.set_defaults(func=start_project)
 
     create_db_parser = subparsers.add_parser('createdb')
-    create_db_parser.add_argument("ctrl", metavar="controllers-module", type=path_to_module)
+    create_db_parser.add_argument("application", metavar="application-package")
     create_db_parser.add_argument("--conf", metavar="configuration-file", action='store',
-                                  help='path to configuration file', dest="path_to_conf", type=path_exist)
+                                  help='path to configuration file', dest="path_to_conf",
+                                  type=PathExist())
     create_db_parser.add_argument("--py-path", metavar="py-path", action='store',
-                                  help='path to directory containing python package', dest="pypath")
+                                  type=PathExist(is_dir=True), dest="pypath",
+                                  help='path to directory containing python package')
     create_db_parser.set_defaults(func=create_db)
+
+    run_server_parser = subparsers.add_parser('runserver')
+    run_server_parser.add_argument("project_dir", metavar="project-directory",
+                                   type=PathExist(is_dir=True))
+    run_server_parser.add_argument("--conf", metavar="configuration-file", action='store',
+                                   help='path to configuration file', dest="path_to_conf",
+                                   type=PathExist())
+    run_server_parser.add_argument("--port", action='store', help='port to listen',
+                                   dest="port", type=int, default=8080)
+    run_server_parser.set_defaults(func=run_server)
 
     try:
         user_args = parser.parse_args()
     except SystemExit:
         return 1
 
-    try:
-        if hasattr(user_args, 'func'):
+    if hasattr(user_args, 'func'):
+        try:
             user_args.func(user_args)
-        else:
-            parser.parse_args(['-h'])
-    except:
-        traceback.print_exc()
-        return 1
-    return 0
+        except:
+            traceback.print_exc()
+            return 1
+    else:
+        parser.parse_args(['-h'])
 
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main())
+
