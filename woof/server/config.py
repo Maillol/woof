@@ -51,6 +51,7 @@ class IntValidator:
             raise ConfigIsNotValidError(msg)
         return item
 
+
 class FloatValidator:
     """
     Valide if item is float between min and max. 
@@ -68,6 +69,7 @@ class FloatValidator:
             msg = 'must be a float between {s.min} and {s.max}'.format(s=self)
             raise ConfigIsNotValidError(msg)
         return item
+
 
 class IsTypeValidator:
     expected_type = NotImplemented

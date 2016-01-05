@@ -53,11 +53,10 @@ def create_db(args):
     Read configuration file and create database.
     """
     if args.path_to_conf is not None:
-        os.environ.setdefault('WOOF_CONFIG', args.path_to_conf)
+        os.environ.setdefault('WOOF_CONFIG_FILE', args.path_to_conf)
 
     if args.pypath is not None:
-        sys.path.insert(0, args.pypath)
-
+        sys.path.insert(0, os.path.abspath(args.pypath))
     controller = importlib.import_module(args.ctrl)
     MetaResource.initialize(config.database)
     MetaResource.create_tables()
@@ -143,7 +142,7 @@ def main():
     create_db_parser.add_argument("--conf", metavar="configuration-file", action='store',
                                   help='path to configuration file', dest="path_to_conf", type=path_exist)
     create_db_parser.add_argument("--py-path", metavar="py-path", action='store',
-                                  help='path to python module', dest="pypath")
+                                  help='path to directory containing python package', dest="pypath")
     create_db_parser.set_defaults(func=create_db)
 
     try:
