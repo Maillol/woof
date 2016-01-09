@@ -154,6 +154,7 @@ class ConfigReader:
     ENVIRON_VAR_NAME = 'WOOF_CONFIG_FILE'
     VALIDATOR = None
     _not_loaded = True
+    path_to_conf = None
 
     def reload_config(self):
         self.clear_config()

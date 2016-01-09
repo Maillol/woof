@@ -3,6 +3,7 @@ from .sqltranslator import MetaSQLTranslator
 
 import threading
 import importlib
+import os
 
 
 class IntegrityError(Exception):
@@ -72,11 +73,29 @@ class MetaConnectorAdapter(type):
             if not isinstance(attrs['OPTIONAL_ARGS'], dict):
                 raise TypeError('{} OPTIONAL_ARGS attribute must be a dict'.format(cls))
 
+            # Bound staticmethod and classmethod in the EXPECTED_ARGS and OPTIONAL_ARGS dict.
+            for mtd_name, mtd in attrs.items():
+                if isinstance(mtd, (staticmethod, classmethod)):
+                    for k, v in attrs['EXPECTED_ARGS'].items():
+                        if v is mtd:
+                            attrs['EXPECTED_ARGS'][k] = getattr(cls, mtd_name)
+                            break
+
+                    for k, v in attrs['OPTIONAL_ARGS'].items():
+                        if v is mtd:
+                            attrs['OPTIONAL_ARGS'][k] = getattr(cls, mtd_name)
+                            break
+
 
 class ConnectorAdapter(metaclass=MetaConnectorAdapter):
     """
     Class base to translate parameters of connection to the concrete database connector.
-    after instantiation, translated parameters are accessible by connection_parameters attribute
+    after instantiation, translated parameters are accessible by connection_parameters attribute.
+
+    A ConnectorAdapter must have EXPECTED_ARGS and OPTIONAL_ARGS class attribute dict.
+    The keys are the standards names such as (database, host, port, user, password ...) and
+    the values are translated name to connect function parameters. A value can be a callable or
+    unbound static or class method which translate parameters.
     """
     def __init__(self, connection_parameters):
         self.connection_parameters = self.translate_kwargs(connection_parameters)
@@ -100,8 +119,11 @@ class ConnectorAdapter(metaclass=MetaConnectorAdapter):
 
         translated_kwargs = {}
         for std_name, translated_name in cls.EXPECTED_ARGS.items():
-            translated_kwargs[translated_name] = parameters[std_name]
-
+            if callable(translated_name):
+                translated_kwargs.update(
+                    translated_name(parameters[std_name]))
+            else:
+                translated_kwargs[translated_name] = parameters[std_name]
         for std_name, translated_name in cls.OPTIONAL_ARGS.items():
             if std_name in parameters:
                 translated_kwargs[translated_name] = parameters[std_name]
@@ -110,7 +132,16 @@ class ConnectorAdapter(metaclass=MetaConnectorAdapter):
 
 
 class SqliteConnectorAdapter(ConnectorAdapter):
-    EXPECTED_ARGS = {'database': 'database'}
+
+    @staticmethod
+    def translate_database(database):
+        if not os.path.isabs(database):
+            from .server import config
+            path_to_conf = os.path.dirname(config.path_to_conf)
+            database = os.path.join(path_to_conf, database)
+        return dict(database=database)
+
+    EXPECTED_ARGS = {'database': translate_database}
     OPTIONAL_ARGS = {'timeout': 'timeout',
                      'cached_statements': 'cached_statements',
                      'isolation_level': 'isolation_level'}
