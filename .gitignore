@@ -3,4 +3,5 @@ __pycache__
 *.db
 build/
 dist/
+docs/_build/
 
