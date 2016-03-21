@@ -6,7 +6,7 @@ Woof is simple open source Python3 framework to develop API REST on database.
 
 Create a new project 
 
-```bash
+```
 woof startproject hotel
 ```
 

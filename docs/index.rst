@@ -12,6 +12,10 @@ Contents:
    :maxdepth: 2
 
    quickstart
+   resource
+   entrypoint
+   controller
+
 
 Indices and tables
 
