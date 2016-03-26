@@ -135,7 +135,7 @@ class SqliteConnectorAdapter(ConnectorAdapter):
 
     @staticmethod
     def translate_database(database):
-        if not os.path.isabs(database):
+        if database != ':memory:' and not os.path.isabs(database):
             from .server import config
             path_to_conf = os.path.dirname(config.path_to_conf)
             database = os.path.join(path_to_conf, database)
