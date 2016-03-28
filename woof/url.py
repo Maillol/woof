@@ -212,7 +212,7 @@ class EntryPoint:
                 resources_url += '/' + word
                 single_resource_url += '/' + word
 
-        decorator = self.get(single_resource_url, single=True)
+        decorator = self.get(single_resource_url)
         decorator(GetSingleControllerBuilder(resource))
 
         decorator = self.get(resources_url)
@@ -232,6 +232,7 @@ class GetSingleControllerBuilder:
     """
     Generate controller for get single resource request.
     """
+    single = True
 
     def __init__(self, resource):
         self.resource = resource
@@ -242,7 +243,12 @@ class GetSingleControllerBuilder:
         for field in self.resource._id_fields_names[1:]:
             where_clause &= getattr(self.resource, field) == kwargs[field]
 
-        return self.resource.select().where(where_clause)
+        try:
+            resource = next(iter(self.resource.select().where(where_clause)))
+        except StopIteration:
+            return None
+        else:
+            return resource.to_dict()
 
 
 class GetControllerBuilder:
@@ -269,10 +275,15 @@ class GetControllerBuilder:
             where_clause = getattr(self.resource, field) == kwargs[field]
             for field in self.inherited_ids[1:]:
                 where_clause &= getattr(self.resource, field) == kwargs[field]
-            return self.resource.select().where(where_clause)
+            return [resource.to_dict()
+                    for resource
+                    in self.resource.select().where(where_clause)]
 
         else:
-            return self.resource.select()
+            return [resource.to_dict()
+                    for resource
+                    in self.resource.select()]
+
 
 
 class PostControllerBuilder:
@@ -297,7 +308,7 @@ class PostControllerBuilder:
     def __call__(self, body, **kwargs):
         for name in self.inherited_ids:
             body[name] = kwargs[name]
-        return self._save(body)
+        return self._save(body).to_dict()
 
     def _save(self, body):
         instance = self.resource(**body)
@@ -327,7 +338,7 @@ class PutControllerBuilder:
 
         instance = self.resource(**body)
         instance.update()
-        return instance
+        return instance.to_dict()
 
 
 class DeleteControllerBuilder:

@@ -317,23 +317,47 @@ class ForeignKey:
         self.referenced_fields = referenced_fields
 
 
+class NotSelectedField:
+    """
+    This object is used instead of value from
+    database when field isn't selected during sql query.
+    """
+    def __repr__(self):
+        return 'NotSelectedField'
+
+    __str__ = __repr__
+
+NotSelectedField = NotSelectedField()
+
+
 class Query:
     class Cursor:
         def __init__(self, cursor, resource, field_names):
+            """
+            cursor - DB-API cursor object
+            resource - Resource sub-class
+            field_name - names of field used in select sql query
+            """
             self._cursor = cursor
             self._resource = resource
-            self._field_names = field_names
+            self._selected_field_names = field_names
+            self._d = {field.name: NotSelectedField
+                       for field
+                       in self._resource._fields
+                       if isinstance(field, ScalarField)}
 
         def __next__(self):
             values = self._cursor.fetchone()
             if values is None:
                 raise StopIteration()
-            return self._resource(**dict(zip(self._field_names, values)))
+            self._d.update(dict(zip(self._selected_field_names, values)))
+            return self._resource(**self._d)
 
-    def __init__(self, resource):
+    def __init__(self, resource, fields):
         self.resource = resource
         self.join_criteria = []
         self.where_criteria = None
+        self.selected_fields = fields
 
     def join(self, resource, on):
         self.join_criteria.append((resource, on.sql))
@@ -344,9 +368,15 @@ class Query:
         return self
 
     def get_sql(self):
-        field_names = [field.name
-                       for field in self.resource._fields
-                       if isinstance(field, ScalarField)]
+        if self.selected_fields:
+            field_names = [field.name
+                           for field in self.resource._fields
+                           if isinstance(field, ScalarField)
+                           and field.name in self.selected_fields]
+        else:
+            field_names = [field.name
+                           for field in self.resource._fields
+                           if isinstance(field, ScalarField)]
 
         sql = "SELECT DISTINCT {} FROM {}".format(
             ', '.join(field_names), self.resource._table_name)
@@ -384,8 +414,8 @@ class Resource(metaclass=MetaResource):
             setattr(self, field_name, kwargs[field_name])
 
     @classmethod
-    def select(cls, **kwargs):
-        return Query(cls)
+    def select(cls, *field):
+        return Query(cls, field)
 
     def save(self):
         fields = []
@@ -428,9 +458,10 @@ class Resource(metaclass=MetaResource):
         dictionary = {}
         for field in self._fields:
             value = getattr(self, field.name)
-            if isinstance(value, Query):
-                value = [e.to_dict() for e in value]
-            dictionary[field.name] = value
+            if value is not NotSelectedField:
+                if isinstance(value, Query):
+                    value = [e.to_dict() for e in value]
+                dictionary[field.name] = value
         return dictionary
 
 
@@ -517,7 +548,11 @@ class Field:
         if obj is None:
             return Condition(
                 '{}.{}'.format(cls._table_name, self.name))
-        return self.to_py_factory(obj._state[self.name])
+
+        value = obj._state[self.name]
+        if value is NotSelectedField:
+            return value
+        return self.to_py_factory(value)
 
     def __set__(self, obj, value):
         obj._state[self.name] = value
@@ -669,12 +704,18 @@ class ComposedBy(Field):
         query = other_resource.select()
 
         field = obj._id_fields_names[0]
+        value = getattr(obj, field)
+        if value is NotSelectedField:
+            return value
         clause_where = (getattr(other_resource,
-                                obj._table_name + '_' + field) == getattr(obj, field))
+                                obj._table_name + '_' + field) == value)
 
         for field in obj._id_fields_names[1:]:
+            value = getattr(obj, field)
+            if value is NotSelectedField:
+                return value
             clause_where &= (
-                getattr(other_resource, obj._table_name + '_' + field) == getattr(obj, field))
+                getattr(other_resource, obj._table_name + '_' + field) == value)
 
         query.where(clause_where)
         return query
@@ -684,5 +725,5 @@ class ComposedBy(Field):
 
 
 __all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
-           'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'association']
+           'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'association', 'NotSelectedField']
 

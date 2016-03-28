@@ -62,11 +62,11 @@ class RESTServer:
                 except LookupError:
                     raise NotFoundError()
 
-                resources = tuple(controller(**parameters))
+                resources = controller(**parameters)
                 if hasattr(controller, 'single') and controller.single:
                     if resources:
                         code = '200 OK'
-                        body = json.dumps(resources[0].to_dict()).encode('utf-8')
+                        body = json.dumps(resources).encode('utf-8')
 
                     else:
                         code = '404 Not Found'
@@ -74,13 +74,7 @@ class RESTServer:
 
                 else:
                     code = '200 OK'
-                    if resources:
-                        body = json.dumps([resource.to_dict()
-                                           for resource
-                                           in resources]).encode('utf-8')
-
-                    else:
-                        body = b'[]'
+                    body = json.dumps(resources).encode('utf-8')
 
             elif method == 'POST':
                 try:
@@ -91,7 +85,7 @@ class RESTServer:
                 resource = controller(self._parse_body(environ), **parameters)
                 #response_headers.append(('Location', resource_location))
                 code = '200 Created'
-                body = json.dumps(resource.to_dict()).encode('utf-8')
+                body = json.dumps(resource).encode('utf-8')
 
             elif method == 'PUT':
                 try:
@@ -101,7 +95,7 @@ class RESTServer:
 
                 resource = controller(self._parse_body(environ), **parameters)
                 code = '200 Updated'
-                body = json.dumps(resource.to_dict()).encode('utf-8')
+                body = json.dumps(resource).encode('utf-8')
 
             elif method == 'DELETE':
                 try:

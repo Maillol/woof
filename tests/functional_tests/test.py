@@ -63,6 +63,12 @@ class TestCrud(unittest.TestCase):
     def AssertJsonEqual(self, serialized, expected):
         self.assertEqual(json.loads(serialized.decode('utf-8')), expected)
 
+    def AssertStatusEquals(self, status):
+        try:
+            self.assertEqual(self.server.start_response.call_args[0][0], status)
+        except IndexError:
+            self.fail("start_response method hasn't called with status")
+
     @classmethod
     def setUpClass(cls):
         cls.tmp_dir = TemporaryDirectory()
@@ -113,56 +119,65 @@ class TestCrud(unittest.TestCase):
         books = self.server.get('/api/books', '')
         self.AssertJsonEqual(books, self.saved_books)
 
-    def test_05_update_books(self):
+    def test_05_select_one_book(self):
+        book = self.server.get('/api/books/1', '')
+        self.AssertJsonEqual(book, self.saved_books[0])
+
+    def test_06_select_not_existing_book(self):
+        book = self.server.get('/api/books/342', '')
+        self.AssertStatusEquals('404 Not Found')
+        self.AssertJsonEqual(book, {'error': 'Resource not found'})
+
+    def test_07_update_books(self):
         book = dict(title='Martine go to the cinema',
                     abstract='Martine go to the cinema with Chuck Noris')
         updated = self.server.put('/api/books/1', '', json.dumps(book))
         book.update(dict(id=1, chapters=[]))
         self.AssertJsonEqual(updated, book)
 
-    def test_06_create_chapter(self):
+    def test_08_create_chapter(self):
         chapter = dict(number=1, title="First step")
         created = self.server.post('/api/books/1/chapters', '', json.dumps(chapter))
         chapter['book_id'] = 1
         self.AssertJsonEqual(created, chapter)
 
-    def test_07_create_chapter(self):
+    def test_09_create_chapter(self):
         chapter = dict(number=1, title="Init")
         created = self.server.post('/api/books/2/chapters', '', json.dumps(chapter))
         chapter['book_id'] = 2
         self.AssertJsonEqual(created, chapter)
 
-    def test_08_update_chapter(self):
+    def test_10_update_chapter(self):
         chapter = dict(number=1, title="Introduction")
         updated = self.server.put('/api/books/1/chapters/1', '', json.dumps(chapter))
         chapter['book_id'] = 1
         self.AssertJsonEqual(updated, chapter)
 
-    def test_09_select_chapter(self):
+    def test_11_select_chapter(self):
         chapter = self.server.get('/api/books/1/chapters/1', '')
         expected = dict(book_id=1, number=1, title="Introduction")
         self.AssertJsonEqual(chapter, expected)
 
-    def test_10_select_chapters(self):
+    def test_12_select_chapters(self):
         chapter = self.server.get('/api/books/1/chapters', '')
         expected = [{"book_id": 1, "number": 1, "title": "Introduction"}]
         self.AssertJsonEqual(chapter, expected)
 
-    def test_11_select_chapters(self):
+    def test_13_select_chapters(self):
         chapter = self.server.get('/api/books/2/chapters', '')
         expected = [{"book_id": 2, "number": 1, "title": "Init"}]
         self.AssertJsonEqual(chapter, expected)
 
-    def test_12_delete_chapter(self):
+    def test_14_delete_chapter(self):
         chapter = self.server.delete('/api/books/1/chapters/1', '')
         self.AssertJsonEqual(chapter, '')
 
-    def test_13_select_chapters(self):
+    def test_15_select_chapters(self):
         chapter = self.server.get('/api/books/1/chapters', '')
         expected = []
         self.AssertJsonEqual(chapter, expected)
 
-    def test_14_select_chapters(self):
+    def test_16_select_chapters(self):
         chapter = self.server.get('/api/books/2/chapters', '')
         expected = [{"book_id": 2, "number": 1, "title": "Init"}]
         self.AssertJsonEqual(chapter, expected)

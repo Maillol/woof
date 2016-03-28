@@ -60,12 +60,12 @@ class TestCrud(TestWithHotelSchema):
         hotel.save()
 
         result = MetaResource.db.execute('SELECT * FROM hotel;').fetchall()
-    
+
         self.assertEqual(result,
                          [(1, 'Hotel California', 'route de radis'),
                           (2, 'Tokio Hotel', '125 main street')])
 
-    def test_02_iter_on_select_hotel(self):
+    def test_02_10_iter_on_select_hotel(self):
         loop = iter(self.Hotel.select())
         hotel = next(loop)
         self.assertEqual(hotel.id, 1)
@@ -76,6 +76,22 @@ class TestCrud(TestWithHotelSchema):
         self.assertEqual(hotel.id, 2)
         self.assertEqual(hotel.name, 'Tokio Hotel')
         self.assertEqual(hotel.address, '125 main street')
+
+        with self.assertRaises(StopIteration):
+            hotel = next(loop)
+
+    def test_02_20_iter_on_select_hotel_restrict_field(self):
+        loop = iter(self.Hotel.select('name'))
+        hotel = next(loop)
+
+        self.assertEqual(hotel.id, NotSelectedField)
+        self.assertEqual(hotel.name, 'Hotel California')
+        self.assertEqual(hotel.address, NotSelectedField)
+
+        hotel = next(loop)
+        self.assertEqual(hotel.id, NotSelectedField)
+        self.assertEqual(hotel.name, 'Tokio Hotel')
+        self.assertEqual(hotel.address, NotSelectedField)
 
         with self.assertRaises(StopIteration):
             hotel = next(loop)
