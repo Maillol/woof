@@ -104,9 +104,9 @@ class URLPathTree:
 
             for node in node.children:
                 if isinstance(node.value, _PathParameter):
-                    values[node.value.name] = path[0]
                     result = walk(path[1:], node, values)
                     if result is not None:
+                        values[node.value.name] = path[0]
                         return result
                 elif node.value == path[0]:
                     result = walk(path[1:], node, values)
@@ -118,6 +118,18 @@ class URLPathTree:
         if result is None:
             raise LookupError("URL not found", url)
         return result
+
+    def get_controllers(self):
+        controllers = []
+        def walk(node, params=()):
+            if isinstance(node.value, _PathParameter):
+                params += (node.value.name, )
+            if node.ctrl is not None:
+                controllers.append((node.ctrl, params))
+            for child in node.children:
+                walk(child, params)
+        walk(self._root)
+        return controllers
 
     def __repr__(self):
         def walk(node, offset):

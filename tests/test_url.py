@@ -11,7 +11,7 @@ from woof.url import EntryPoint, URLPathTree
 def hotels():
     ...
 
-def hotel(hotel_id):
+def hotel(id):
     ...
 
 def rooms(hotel_id):
@@ -34,7 +34,7 @@ class TestURLPathTree(unittest.TestCase):
         cls.url_path_tree = URLPathTree()
 
         cls.url_path_tree.add("/hotel", hotels)
-        cls.url_path_tree.add("/hotel/{hotel_id}", hotel)
+        cls.url_path_tree.add("/hotel/{id}", hotel)
         cls.url_path_tree.add("/hotel/{hotel_id}/room", rooms)
         cls.url_path_tree.add("/hotel/{hotel_id}/room/{room_id}", room)
         cls.url_path_tree.add("/person/{person_id}", person)
@@ -48,7 +48,7 @@ class TestURLPathTree(unittest.TestCase):
     def test_get_hotel(self):
         ctrl, parameters = self.url_path_tree.get("/hotel/33")
         self.assertEqual(ctrl, hotel)
-        self.assertEqual(parameters, {'hotel_id':'33'})
+        self.assertEqual(parameters, {'id':'33'})
 
     def test_get_rooms(self):
         ctrl, parameters = self.url_path_tree.get("/hotel/33/room")
@@ -87,6 +87,18 @@ class TestURLPathTree(unittest.TestCase):
     def test_cannot_add_existing_url(self):
         with self.assertRaises(ValueError):
             self.url_path_tree.add("/hotel/{id}/room/{id}", room)
+
+    def test_get_controllers(self):
+        expected = [(hotels, ()),
+                    (hotel, ('id',)),
+                    (rooms, ('hotel_id',)),
+                    (room, ('hotel_id', 'room_id')),
+                    (persons, ()),
+                    (person, ('person_id',))]
+
+        self.assertCountEqual(
+            self.url_path_tree.get_controllers(),
+            expected)
 
 
 class TestEntryPoint(unittest.TestCase):
