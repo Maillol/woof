@@ -82,6 +82,8 @@ class MetaResource(type):
             cls.Meta.required_resource_for_pk = []
         if not hasattr(cls.Meta, 'association_meta_data'):
             cls.Meta.association_meta_data = []
+        if not hasattr(cls.Meta, 'composed'):
+            cls.Meta.composed = False
 
     def __init__(cls, name, parent, attrs):
         if name != 'Resource':
@@ -126,6 +128,7 @@ class MetaResource(type):
         for resource_name, resource in MetaResource._starting_block.items():
             for field in resource._fields:
                 if isinstance(field, ComposedBy):
+                    resource.Meta.composed = True 
                     try:
                         weak_entity = MetaResource._starting_block[field.other_resource]
                     except KeyError:

@@ -3,17 +3,7 @@
 
 import json
 import os
-
-def parse_to_create(cls, extern, entity_conf):
-    for k, v in entity_conf.items():
-        nested = extern.get(k)
-        if nested is not None and isinstance(v, dict):
-            entity_conf[k] = parse_to_create(nested[0], nested[1], v)
-    return cls.create(**entity_conf)
-
-
-# query_string = [(k, fields_types[k.split('-')[0]](v)) for k, v in parse_qsl(query_string)]
-
+from .optimizer import optimize
 
 class RESTServerError(Exception):
     pass
@@ -37,6 +27,7 @@ class RESTServer:
         self.post_urls = entry_point.post_urls
         self.del_urls = entry_point.del_urls
         self.opt_urls = entry_point.opt_urls
+        optimize(self.get_urls)
 
     @staticmethod
     def _parse_body(environ):

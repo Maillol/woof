@@ -108,6 +108,7 @@ class URLPathTree:
                     if result is not None:
                         values[node.value.name] = path[0]
                         return result
+
                 elif node.value == path[0]:
                     result = walk(path[1:], node, values)
                     if result is not None:
@@ -118,6 +119,16 @@ class URLPathTree:
         if result is None:
             raise LookupError("URL not found", url)
         return result
+
+    def replace_controller(self, old_controller, new_controller):
+        def walk(node):
+            if node.ctrl is old_controller:
+                node.ctrl = new_controller
+            else:
+                for child in node.children:
+                    walk(child)
+        walk(self._root)
+
 
     def get_controllers(self):
         controllers = []
@@ -245,9 +256,14 @@ class GetSingleControllerBuilder:
     Generate controller for get single resource request.
     """
     single = True
+    optimizable = False
 
     def __init__(self, resource):
         self.resource = resource
+        self.resource.on_initialized.append(self.on_initialized)
+
+    def on_initialized(self):
+        self.optimizable = not self.resource.Meta.composed
 
     def __call__(self, **kwargs):
         field = self.resource._id_fields_names[0]
@@ -267,6 +283,9 @@ class GetControllerBuilder:
     """
     Generate controller for get resources request.
     """
+
+    optimizable = False
+
     def __init__(self, resource):
         self.resource = resource
         self.resource.on_initialized.append(self.on_initialized)
