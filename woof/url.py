@@ -291,6 +291,7 @@ class GetControllerBuilder:
         self.resource.on_initialized.append(self.on_initialized)
 
     def on_initialized(self):
+        self.optimizable = not self.resource.Meta.composed
         weak_id = [field.name for field in self.resource.Meta.weak_id]
         if weak_id:
             self.inherited_ids = [field_name
