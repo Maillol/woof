@@ -61,7 +61,7 @@ def delete_room(hotel_id, room_id):
 
 ```bash
 $ cd hotel
-$ woof createdb demo.controllers
+$ woof createdb demo
 $ gunicorn wsgi
 ```
 

@@ -2,7 +2,7 @@
 
 cd demo
 export PYTHONPATH=$PYTHONPATH:$(dirname $PWD)
-python3 -m woof createdb demo.controllers
+python3 -m woof createdb demo
 
 echo "Start server"
 gunicorn wsgi -D -p gunicorn.pid
