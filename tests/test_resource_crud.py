@@ -43,6 +43,7 @@ class TestWithHotelSchema(unittest.TestCase):
         cls.Person = Person
         cls.Rent = Rent
 
+
         data_base = DataBase('sqlite', database=':memory:', isolation_level=None)
         MetaResource.initialize(data_base)
         MetaResource.create_tables()
@@ -298,8 +299,6 @@ class TestCrud(TestWithHotelSchema):
         for hotel in self.Hotel.select():
             hotel.delete()
         self.assertEqual(list(self.Hotel.select()), [])
-
-
 
 
 class TestResourceToDict(TestWithHotelSchema):

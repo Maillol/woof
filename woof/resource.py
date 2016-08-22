@@ -2,36 +2,7 @@ from collections import OrderedDict
 import datetime
 from decimal import Decimal
 from .db import DataBase
-
-
-def to_underscore(name):
-    """
-    >>> to_underscore("FooBar")
-    'foo_bar'
-    >>> to_underscore("HTTPServer")
-    'http_server'
-    """
-    if not name:
-        return name
-    iterator = iter(name)
-    out = [next(iterator).lower()]
-    last_is_upper = True
-    parse_abbreviation = False
-    for char in iterator:
-        if char.isupper():
-            if last_is_upper:
-                parse_abbreviation = True
-                out.append(char.lower())
-            else:
-                out.append('_' + char.lower())
-            last_is_upper = True
-        else:
-            if parse_abbreviation:
-                out.insert(-1, '_')
-                parse_abbreviation = False
-            out.append(char)
-            last_is_upper = False
-    return "".join(out)
+from .names_manipulation import to_underscore
 
 
 def association(**resources):
@@ -69,19 +40,21 @@ class MetaResource(type):
                 foreign_keys = []
                 required_resource_for_pk = []
                 association_meta_data = []
+                uniques = [] # List of field list unique together.
         """
         if not hasattr(cls, 'Meta'):
             cls.Meta = type('Meta', (), {})
-        if not hasattr(cls.Meta, 'foreign_keys'):
-            cls.Meta.foreign_keys = []
-        if not hasattr(cls.Meta, 'primary_key'):
-            cls.Meta.primary_key = []
-        if not hasattr(cls.Meta, 'weak_id'):
-            cls.Meta.weak_id = []
-        if not hasattr(cls.Meta, 'required_resource_for_pk'):
-            cls.Meta.required_resource_for_pk = []
-        if not hasattr(cls.Meta, 'association_meta_data'):
-            cls.Meta.association_meta_data = []
+
+        for attr in ('primary_key',
+                     'foreign_keys',
+                     'weak_id',
+                     'uniques',
+                     'required_resource_for_pk',
+                     'association_meta_data'):
+
+            if not hasattr(cls.Meta, attr):
+                setattr(cls.Meta, attr, [])
+
         if not hasattr(cls.Meta, 'composed'):
             cls.Meta.composed = False
 
@@ -123,7 +96,7 @@ class MetaResource(type):
     def _generate_weak_id_if_not_exist(mcs):
         """
         1) Search all resource pointed by a ComposedBy field.
-        2) Add weak id field and  set Meta.required_resource_for_pk.
+        2) Add weak id field and set Meta.required_resource_for_pk.
         """
         for resource_name, resource in MetaResource._starting_block.items():
             for field in resource._fields:
@@ -194,6 +167,9 @@ class MetaResource(type):
                         ForeignKey([e[0] for e in fk_names], resource._table_name,
                                    resource._id_fields_names)
                     )
+
+                    if field.card_max == '1':
+                        other_resource.Meta.uniques.append([e[0] for e in fk_names])
 
     @staticmethod
     def get_id_fields_names(resource):
@@ -277,7 +253,7 @@ class MetaResource(type):
         for resource_name in resources_names:
             resource = mcs.register[resource_name][0]
             for sql in mcs.db.sql_translator.create_schema_constraints(
-                resource._table_name, resource.Meta.foreign_keys):
+                resource._table_name, resource.Meta.foreign_keys, resource.Meta.uniques):
                 mcs.db.execute(sql)
 
     @classmethod
@@ -729,4 +705,3 @@ class ComposedBy(Field):
 
 __all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
            'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'association', 'NotSelectedField']
-

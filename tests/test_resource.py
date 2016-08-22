@@ -241,6 +241,9 @@ class TestComposedByCardinality(unittest.TestCase):
         self.assertExecute(
             'ALTER TABLE a '
             'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
+        self.assertExecute(
+            'ALTER TABLE a '
+            'ADD UNIQUE (r_id);')
 
     def test_cardinality_zero_or_one(self):
         self.assertExecute(
@@ -251,6 +254,9 @@ class TestComposedByCardinality(unittest.TestCase):
         self.assertExecute(
             'ALTER TABLE b '
             'ADD FOREIGN KEY (r_id) REFERENCES r(id);')
+        self.assertExecute(
+            'ALTER TABLE a '
+            'ADD UNIQUE (r_id);')
 
     def test_cardinality_one_or_more(self):
         self.assertExecute(
@@ -278,6 +284,7 @@ class TestTypeFieldMetaData(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         MetaResource.clear()
+
         class A(Resource):
             ref = ComposedBy('B')
             ref_c = ComposedBy('C')

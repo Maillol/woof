@@ -30,8 +30,19 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
         return ""
 
     @classmethod
-    def create_schema_constraints(cls, table_name, foreign_keys):
-        return (cls.foreign_key(table_name, fk) for fk in foreign_keys)
+    def create_schema_constraints(cls, table_name, foreign_keys, uniques):
+        """
+        :param table_name: name of table
+        :param foreign_keys: List of ForeignKey objects
+        :param uniques: list of list of fields name unique together.
+        :return: list of SQL constraints
+        """
+        constraints = []
+        for fk in foreign_keys:
+            constraints.append(cls.foreign_key(table_name, fk))
+        for unique in uniques:
+            constraints.append(cls.unique(table_name, unique))
+        return constraints
 
     @classmethod
     def foreign_key(cls, table_name, fk):
@@ -43,6 +54,14 @@ class SQLTranslator(metaclass=MetaSQLTranslator):
             "ALTER TABLE {table_name} "
             "ADD FOREIGN KEY ({fields}) "
             "REFERENCES {referenced_table}({referenced_fields});"
+        ).format(**locals())
+
+    @classmethod
+    def unique(cls, table_name, fields):
+        fields_names = ", ".join(fields)
+        return (
+            "ALTER TABLE {table_name} "
+            "ADD UNIQUE ({fields_names});"
         ).format(**locals())
 
     @classmethod
@@ -163,10 +182,12 @@ class SqliteTranslator(SQLTranslator):
         return "DELETE FROM {} WHERE {};".format(table_name, where_criteria)
 
     @classmethod
-    def create_schema_constraints(cls, table_name, foreign_keys):
+    def create_schema_constraints(cls, table_name, foreign_keys, uniques):
         sql = []
         for fk in foreign_keys:
             sql.extend(cls.foreign_key(table_name, fk))
+        for unique in uniques:
+            sql.append(cls.unique(table_name, unique))
         return sql
 
     @classmethod
