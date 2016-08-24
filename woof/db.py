@@ -6,8 +6,81 @@ import importlib
 import os
 
 
-class IntegrityError(Exception):
-    pass
+class Error(Exception):
+    """
+    Exception that is the base class of all other error exceptions.
+    You can use this to catch all errors with one single except statement
+    """
+
+
+class InterfaceError(Error):
+    """
+    Exception raised for errors that are related to the database interface
+    rather than the database itself.
+    """
+
+
+class DatabaseError(Error):
+    """
+    Exception raised for errors that are related to the database.
+    """
+
+
+class DataError(DatabaseError):
+    """
+    Exception raised for errors that are due to problems with the processed data
+    like division by zero, numeric value out of range, etc.
+    """
+
+
+class OperationalError(DatabaseError):
+    """
+    Exception raised for errors that are related to the database's operation and not
+    necessarily under the control of the programmer, e.g. an unexpected disconnect occurs,
+    the data source name is not found, a transaction could not be processed, a memory
+    allocation error occurred during processing, etc.
+    """
+
+
+class IntegrityError(DatabaseError):
+    """
+    Exception raised when the relational integrity of the database is affected,
+    e.g. a foreign key check fails.
+    """
+
+
+class InternalError(DatabaseError):
+    """
+    Exception raised when the database encounters an internal error,
+    e.g. the cursor is not valid anymore, the transaction is out of sync, etc.
+    """
+
+
+class ProgrammingError(DatabaseError):
+    """
+    Exception raised for programming errors, e.g. table not found or already exists,
+    syntax error in the SQL statement, wrong number of parameters specified, etc.
+    """
+
+
+class NotSupportedError(DatabaseError):
+    """
+    Exception raised in case a method or database API was used which is not supported by the database,
+    e.g. requesting a .rollback() on a connection that does not support transaction or has transactions turned off.
+    """
+
+
+PEP_249_ERROR = {
+    "Error": Error,
+    "InterfaceError": InterfaceError,
+    "DatabaseError": DatabaseError,
+    "DataError": DataError,
+    "OperationalError": OperationalError,
+    "IntegrityError": IntegrityError,
+    "InternalError": InternalError,
+    "ProgrammingError": ProgrammingError,
+    "NotSupportedError": NotSupportedError
+}
 
 
 class DataBase:
@@ -25,7 +98,7 @@ class DataBase:
         self.sql_translator = MetaSQLTranslator.PROVIDERS[provider]
         self.module = importlib.import_module(connector_adapter.PROVIDER_MODULE)
         self.connector = self.module.connect
-        self.integrity_error = self.module.IntegrityError
+        self.error = self.module.Error
         self.connection_parameters = connector_adapter(connection_parameters).connection_parameters
 
     def execute(self, sql_query, parameters=()):
@@ -35,8 +108,9 @@ class DataBase:
         try:
             cursor.execute(sql_query, parameters)
             return cursor
-        except self.integrity_error as error:
-            raise IntegrityError(error.args[0])
+        except self.error as error:
+            cls_error = PEP_249_ERROR[type(error).__name__]
+            raise cls_error(error.args[0], sql_query, parameters)
 
 
 class MetaConnectorAdapter(type):
