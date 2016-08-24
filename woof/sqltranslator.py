@@ -187,7 +187,10 @@ class SqliteTranslator(SQLTranslator):
         for fk in foreign_keys:
             sql.extend(cls.foreign_key(table_name, fk))
         for unique in uniques:
-            sql.append(cls.unique(table_name, unique))
+            idx_name = "idx_{}_{}".format(table_name, '_'.join(unique))
+            sql.append(
+                "CREATE UNIQUE INDEX {} ON {}({});"
+                .format(idx_name, table_name, ', '.join(unique)))
         return sql
 
     @classmethod
