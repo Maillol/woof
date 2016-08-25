@@ -11,6 +11,157 @@ from woof.db import IntegrityError
 from woof.db import DataBase
 
 
+class TestLoyaltyCardSchema(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        MetaResource.clear()
+
+        class LoyaltyCard(Resource):
+            points = IntegerField()
+            expiration_date = DateField()
+            price = FloatField()
+
+        class Customer(Resource):
+            name = StringField()
+            loyalty_card = Has('LoyaltyCard', '0..1')
+
+        data_base = DataBase('sqlite', database=':memory:', isolation_level=None)
+        MetaResource.initialize(data_base)
+        MetaResource.create_tables()
+
+        cls.LoyaltyCard = LoyaltyCard
+        cls.Customer = Customer
+
+
+class TestCrudLoyaltyCardSchema(TestLoyaltyCardSchema):
+    def test_01_create_card(self):
+        card = self.LoyaltyCard(points=0, expiration_date="2015-12-03", price=29.99)
+        card.save()
+
+    def test_02_create_card(self):
+        card = self.LoyaltyCard(points=120, expiration_date="2015-12-05", price=15.00)
+        card.save()
+
+    def test_03_create_customer(self):
+        customer = self.Customer(name="George")
+        customer.save()
+
+    def test_04_select_card(self):
+        cards = list(self.LoyaltyCard.select())
+        self.assertEqual(len(cards), 2)
+
+        card = cards[0]
+        self.assertEqual(card.id, 1)
+        self.assertEqual(card.expiration_date, date(2015, 12, 3))
+        self.assertEqual(card.price, 29.99)
+
+        card = cards[1]
+        self.assertEqual(card.id, 2)
+        self.assertEqual(card.expiration_date, date(2015, 12, 5))
+        self.assertEqual(card.price, 15.00)
+
+    def test_05_select_customer(self):
+        customers = self.Customer.select()
+        customer = list(customers)[0]
+        self.assertEqual(customer.id, 1)
+        self.assertEqual(customer.name, "George")
+        self.assertEqual(customer.loyalty_card, None)
+
+    def test_06_customer_has_card(self):
+        customers = self.Customer.select()
+        customer = list(customers)[0]
+        cards = self.LoyaltyCard.select()
+        card = list(cards)[1]
+        customer.loyalty_card = card
+        customer.update()
+
+    def test_07_select_customer(self):
+        customers = self.Customer.select()
+        customer = list(customers)[0]
+        self.assertEqual(customer.id, 1)
+        self.assertEqual(customer.name, "George")
+        self.assertEqual(customer.loyalty_card, {'id': 2})
+
+    def test_08_select_card(self):
+        cards = self.LoyaltyCard.select()
+        card = list(cards)[1]
+        self.assertEqual(card.id, 2)
+        self.assertEqual(card.customer_id, 1)
+        self.assertEqual(card.expiration_date, date(2015, 12, 5))
+        self.assertEqual(card.price, 15.00)
+
+
+class TestCarWheelSchema(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        MetaResource.clear()
+
+        class Car(Resource):
+            numberplate = IntegerField(primary_key=True)
+            name = StringField()
+            wheels = Has('Wheel', '0..*')
+
+        class Wheel(Resource):
+            name = StringField()
+
+        data_base = DataBase('sqlite', database=':memory:', isolation_level=None)
+        MetaResource.initialize(data_base)
+        MetaResource.create_tables()
+
+        cls.Car = Car
+        cls.Wheel = Wheel
+
+
+class TestCrudCarWheelSchema(TestCarWheelSchema):
+    def test_01_create_whell(self):
+        whell = self.Wheel(name='toto')
+        whell.save()
+
+    def test_02_create_whell(self):
+        whell = self.Wheel(name='tata')
+        whell.save()
+
+    def test_03_create_car(self):
+        customer = self.Car(name="Bombo")
+        customer.save()
+
+    def test_04_select_whell(self):
+        whells = list(self.Wheel.select())
+        self.assertEqual(len(whells), 2)
+
+        whell = whells[0]
+        self.assertEqual(whell.id, 1)
+        self.assertEqual(whell.name, "toto")
+
+        whell = whells[1]
+        self.assertEqual(whell.id, 2)
+        self.assertEqual(whell.name, "tata")
+
+    def test_05_select_car(self):
+        cars = self.Car.select()
+        car = list(cars)[0]
+        self.assertEqual(car.numberplate, 1)
+        self.assertEqual(car.name, "Bombo")
+        self.assertEqual(car.wheels, [])
+
+    def test_06_add_whells_to_car(self):
+        cars = self.Car.select()
+        car = list(cars)[0]
+        whells = self.Wheel.select()
+
+        # TODO use car.wheels.add(...) insteadof car.wheels = ...
+        for whell in whells:
+            car.wheels = whell
+            car.update()
+
+    def test_07_select_car(self):
+        cars = self.Car.select()
+        car = list(cars)[0]
+        self.assertEqual(car.numberplate, 1)
+        self.assertEqual(car.name, "Bombo")
+        self.assertEqual(car.wheels, [{'id': 1}, {'id': 2}])
+
+
 class TestWithHotelSchema(unittest.TestCase):
 
     @classmethod

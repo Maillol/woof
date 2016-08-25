@@ -203,6 +203,10 @@ class SqliteTranslator(SQLTranslator):
             "{}.{} == NEW.{}".format(referenced_table, ref_field, field)
             for field, ref_field in zip(fk.fields, fk.referenced_fields))
 
+        field_is_not_null_close = " AND ".join(
+            "NEW.{} IS NOT NULL".format(field)
+            for field in fk.fields)
+
         delete_where_clause = " AND ".join(
             "{}.{} == OLD.{}".format(table_name, ref_field, field)
             for field, ref_field in zip(fk.referenced_fields, fk.fields))
@@ -211,7 +215,7 @@ class SqliteTranslator(SQLTranslator):
             "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_i "
             "BEFORE INSERT ON {table_name} "
             "FOR EACH ROW "
-            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
+            "WHEN ((SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL) AND ({field_is_not_null_close})"
             "BEGIN "
             "SELECT RAISE (ROLLBACK, "
             "'Foreign key mismatch: Value inserted into the {table_name} column ({fields}) "
@@ -221,7 +225,7 @@ class SqliteTranslator(SQLTranslator):
             "CREATE TRIGGER fk_{table_name}_to_{referenced_table}_u "
             "BEFORE UPDATE ON {table_name} "
             "FOR EACH ROW "
-            "WHEN (SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL "
+            "WHEN ((SELECT 1 FROM {referenced_table} WHERE {where_clause}) IS NULL) AND ({field_is_not_null_close})"
             "BEGIN "
             "SELECT RAISE (ROLLBACK, "
             "'Foreign key mismatch: Value updated into the {table_name} column ({fields}) "

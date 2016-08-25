@@ -171,6 +171,24 @@ class MetaResource(type):
                     if field.card_max == '1':
                         other_resource.Meta.uniques.append([e[0] for e in fk_names])
 
+                elif isinstance(field, Has):
+                    other_resource = MetaResource._starting_block[field.other_resource]
+
+                    fk_names = [('{}_{}'.format(resource._table_name, name), field)
+                                for name, field
+                                in mcs.get_id_fields_names(resource)]
+
+                    for fk_name, fk_field in fk_names:
+                        mcs.add_field(other_resource, fk_name, type(fk_field)(nullable=True))
+
+                    other_resource.Meta.foreign_keys.append(
+                        ForeignKey([e[0] for e in fk_names], resource._table_name,
+                                   resource._id_fields_names)
+                    )
+
+                    if field.card_max == '1':
+                        other_resource.Meta.uniques.append([e[0] for e in fk_names])
+
     @staticmethod
     def get_id_fields_names(resource):
         if resource.Meta.weak_id:
@@ -279,7 +297,7 @@ class MetaResource(type):
 
         for callback in mcs.on_initialized:
             callback()
-        on_initialized = []
+        mcs.on_initialized = []
 
     @classmethod
     def clear(mcs):
@@ -413,9 +431,22 @@ class Resource(metaclass=MetaResource):
     def update(self):
         fields = []
         values = []
+        update_with_self = []
+
+        has_fields = set(
+            field.name
+            for field
+            in type(self)._fields
+            if isinstance(field, Has))
+
         for field, value in self._state.items():
-            fields.append(field)
-            values.append(value)
+            if field in has_fields:
+                for id_field in type(self)._id_fields_names:
+                    value._state["{}_{}".format(self._table_name, id_field)] = getattr(self, id_field)
+                update_with_self.append(value)
+            else:
+                fields.append(field)
+                values.append(value)
 
         for field_name in self._id_fields_names:
             values.append(self._state[field_name])
@@ -423,6 +454,9 @@ class Resource(metaclass=MetaResource):
         db = type(type(self)).db
         sql = db.sql_translator.update(self._table_name, fields, self._id_fields_names)
         db.execute(sql, values)
+
+        for resource in update_with_self:
+            resource.update()
 
     def delete(self):
         values = []
@@ -530,6 +564,8 @@ class Field:
 
         value = obj._state[self.name]
         if value is NotSelectedField:
+            return value
+        if value is None:
             return value
         return self.to_py_factory(value)
 
@@ -658,6 +694,11 @@ class FromAssociationField(Field):
 
 class ComposedBy(Field):
     def __init__(self, other_resource, cardinality='0..*', related_name=None, writable=True, readable=True):
+        # TODO card_min = 1 add required attribute constructor to set this value.
+        #
+        # A <>--> B    A(arg1, ..., argN, B_id)     insert A(...); UPDATE B a_ref = new.A.id WHERE B_id;
+        #       1..
+        #
         if not isinstance(other_resource, str):
             raise TypeError('other_resource must be str (got {})'.format(type(other_resource)))
         if len(cardinality) == 4 and cardinality[1:3] == '..':
@@ -703,5 +744,83 @@ class ComposedBy(Field):
         raise AttributeError("can't set attribute {}".format(self.name))
 
 
-__all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField',
+class Has(Field):
+    """
+    if cardinality is '1..*' or '*':
+        This field return list of references to *other_resource* instances.
+
+    if cardinality is '0..1' or '1':
+        This field return None or references to *other_resource* instances.
+    """
+
+    def __init__(self, other_resource, cardinality='0..*', related_name=None, writable=True, readable=True):
+        if not isinstance(other_resource, str):
+            raise TypeError('other_resource must be str (got {})'.format(type(other_resource)))
+        if len(cardinality) == 4 and cardinality[1:3] == '..':
+            card_min, card_max = cardinality.split('..')
+        elif cardinality == '1':
+            card_min = card_max = cardinality
+        elif cardinality == '*':
+            card_min, card_max = ('0', '*')
+        else:
+            raise ValueError('cardinality must be one ("1", "0..1", "1..*", "*")')
+
+        super().__init__(writable, readable, card_max == "1", card_min == "0")
+        self.other_resource = other_resource
+        self.related_name = related_name
+        self.card_min = card_min
+        self.card_max = card_max
+
+        if self.related_name is None:
+            self.related_name = to_underscore(other_resource) + '_ref'
+
+    def __get__(self, obj, cls=None):
+        other_resource = MetaResource.register[self.other_resource][0]
+        query = other_resource.select()
+
+        field = obj._id_fields_names[0]
+        value = getattr(obj, field)
+        if value is NotSelectedField:
+            return value
+        clause_where = (getattr(other_resource,
+                                obj._table_name + '_' + field) == value)
+
+        for field in obj._id_fields_names[1:]:
+            value = getattr(obj, field)
+            if value is NotSelectedField:
+                return value
+            clause_where &= (
+                getattr(other_resource, obj._table_name + '_' + field) == value)
+
+        query.where(clause_where)
+
+        if self.card_max == '*':
+            return [{field_name: getattr(other_instance, field_name)
+                     for field_name
+                     in other_resource._id_fields_names}
+                    for other_instance
+                    in query]
+
+        try:
+            other_instance = next(iter(query))
+            return {field_name: getattr(other_instance, field_name)
+                    for field_name
+                    in other_resource._id_fields_names}
+        except StopIteration:
+            return None
+
+    def __set__(self, obj, value):
+        other_resource = MetaResource.register[self.other_resource][0]
+        if isinstance(value, other_resource):
+            obj._state[self.name] = value
+            # TODO: faire un truc comme ça:
+            #     obj._state[self.name] = value
+            # et pas comme ça:
+            #     value.related_name = getattr(obj, obj._id_fields_names[0])
+            #     value.update()
+        else:
+            raise ValueError("An {} instance is expected".format(self.other_resource))
+
+
+__all__ = ['ToAssociationField', 'NumericField', 'ComposedBy', 'StringField', 'IntegerField', 'BinaryField', 'Has',
            'Resource', 'MetaResource', 'DateTimeField', 'DateField', 'FloatField', 'association', 'NotSelectedField']
