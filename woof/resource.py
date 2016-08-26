@@ -441,9 +441,12 @@ class Resource(metaclass=MetaResource):
 
         for field, value in self._state.items():
             if field in has_fields:
-                for id_field in type(self)._id_fields_names:
-                    value._state["{}_{}".format(self._table_name, id_field)] = getattr(self, id_field)
-                update_with_self.append(value)
+                if isinstance(value, SetRef):
+                    value.save()
+                else:
+                    for id_field in type(self)._id_fields_names:
+                        value._state["{}_{}".format(self._table_name, id_field)] = getattr(self, id_field)
+                    update_with_self.append(value)
             else:
                 fields.append(field)
                 values.append(value)
@@ -744,6 +747,54 @@ class ComposedBy(Field):
         raise AttributeError("can't set attribute {}".format(self.name))
 
 
+class SetRef:
+    def __init__(self, resource, field_name, other_resource_cls, references):
+        self.resource = resource
+        self.field_name = field_name
+        self.other_resource_cls = other_resource_cls
+        self.references = references
+        self.resource._state[field_name] = self
+        self._resource_to_update = list()
+
+    def add(self, other_resource):
+        if not isinstance(other_resource, self.other_resource_cls):
+            raise ValueError("An {} instance is expected".format(self.other_resource_cls.__name__))
+        self.references.append(
+            {field_name: getattr(other_resource, field_name)
+             for field_name
+             in other_resource._id_fields_names})
+        self._resource_to_update.append(('add', other_resource))
+
+    def remove(self, other_resource):
+        if not isinstance(other_resource, self.other_resource_cls):
+            raise ValueError("An {} instance is expected".format(self.other_resource_cls.__name__))
+
+        self.references.remove({field_name: getattr(other_resource, field_name)
+                                for field_name
+                                in other_resource._id_fields_names})
+
+        self._resource_to_update.append(('remove', other_resource))
+
+    def save(self):
+        fields_to_update = {
+            '{}_{}'.format(self.resource._table_name, name): getattr(self.resource, name)
+            for name
+            in self.resource._id_fields_names}
+
+        for order, resource in self._resource_to_update:
+            if order == 'add':
+                for field_name, value in fields_to_update.items():
+                    setattr(resource, field_name, value)
+                resource.update()
+            else:
+                for field_name in fields_to_update:
+                    setattr(resource, field_name, None)
+                resource.update()
+
+    def __iter__(self):
+        return iter(self.references)
+
+
 class Has(Field):
     """
     if cardinality is '1..*' or '*':
@@ -775,49 +826,58 @@ class Has(Field):
             self.related_name = to_underscore(other_resource) + '_ref'
 
     def __get__(self, obj, cls=None):
-        other_resource = MetaResource.register[self.other_resource][0]
-        query = other_resource.select()
+        if not hasattr(obj, '_cache_{}'.format(self.name)):
+            other_resource = MetaResource.register[self.other_resource][0]
+            query = other_resource.select()
 
-        field = obj._id_fields_names[0]
-        value = getattr(obj, field)
-        if value is NotSelectedField:
-            return value
-        clause_where = (getattr(other_resource,
-                                obj._table_name + '_' + field) == value)
-
-        for field in obj._id_fields_names[1:]:
+            field = obj._id_fields_names[0]
             value = getattr(obj, field)
             if value is NotSelectedField:
                 return value
-            clause_where &= (
-                getattr(other_resource, obj._table_name + '_' + field) == value)
+            clause_where = (getattr(other_resource,
+                                    obj._table_name + '_' + field) == value)
 
-        query.where(clause_where)
+            for field in obj._id_fields_names[1:]:
+                value = getattr(obj, field)
+                if value is NotSelectedField:
+                    return value
+                clause_where &= (
+                    getattr(other_resource, obj._table_name + '_' + field) == value)
 
-        if self.card_max == '*':
-            return [{field_name: getattr(other_instance, field_name)
-                     for field_name
-                     in other_resource._id_fields_names}
-                    for other_instance
-                    in query]
+            query.where(clause_where)
 
-        try:
-            other_instance = next(iter(query))
-            return {field_name: getattr(other_instance, field_name)
-                    for field_name
-                    in other_resource._id_fields_names}
-        except StopIteration:
-            return None
+            if self.card_max == '*':
+                setattr(obj,
+                        '_cache_{}'.format(self.name),
+                        SetRef(obj,
+                               self.name,
+                               other_resource,
+                               [{field_name: getattr(other_instance, field_name)
+                                 for field_name
+                                 in other_resource._id_fields_names}
+                                for other_instance
+                                in query]))
+            else:
+                try:
+                    other_instance = next(iter(query))
+                    setattr(obj,
+                            '_cache_{}'.format(self.name),
+                            {field_name: getattr(other_instance, field_name)
+                             for field_name
+                             in other_resource._id_fields_names})
+                except StopIteration:
+                    setattr(obj, '_cache_{}'.format(self.name), None)
+
+        return getattr(obj, '_cache_{}'.format(self.name))
 
     def __set__(self, obj, value):
         other_resource = MetaResource.register[self.other_resource][0]
         if isinstance(value, other_resource):
-            obj._state[self.name] = value
-            # TODO: faire un truc comme ça:
-            #     obj._state[self.name] = value
-            # et pas comme ça:
-            #     value.related_name = getattr(obj, obj._id_fields_names[0])
-            #     value.update()
+            if self.card_max == '1':
+                obj._state[self.name] = value
+            else:
+                raise ValueError("You can't set attribute {!r}."
+                                 " Use add() or delete() method".format(self.name))
         else:
             raise ValueError("An {} instance is expected".format(self.other_resource))
 

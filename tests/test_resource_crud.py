@@ -142,24 +142,36 @@ class TestCrudCarWheelSchema(TestCarWheelSchema):
         car = list(cars)[0]
         self.assertEqual(car.numberplate, 1)
         self.assertEqual(car.name, "Bombo")
-        self.assertEqual(car.wheels, [])
+        self.assertCountEqual(car.wheels, [])
 
     def test_06_add_whells_to_car(self):
         cars = self.Car.select()
         car = list(cars)[0]
         whells = self.Wheel.select()
-
-        # TODO use car.wheels.add(...) insteadof car.wheels = ...
         for whell in whells:
-            car.wheels = whell
-            car.update()
+            car.wheels.add(whell)
+        car.update()
 
     def test_07_select_car(self):
         cars = self.Car.select()
         car = list(cars)[0]
         self.assertEqual(car.numberplate, 1)
         self.assertEqual(car.name, "Bombo")
-        self.assertEqual(car.wheels, [{'id': 1}, {'id': 2}])
+        self.assertCountEqual(car.wheels, [{'id': 1}, {'id': 2}])
+
+    def test_08_remove_whells_to_car(self):
+        cars = self.Car.select()
+        car = list(cars)[0]
+        whell = list(self.Wheel.select().where(self.Wheel.id==1))[0]
+        car.wheels.remove(whell)
+        car.update()
+
+    def test_09_select_car(self):
+        cars = self.Car.select()
+        car = list(cars)[0]
+        self.assertEqual(car.numberplate, 1)
+        self.assertEqual(car.name, "Bombo")
+        self.assertCountEqual(car.wheels, [{'id': 2}])
 
 
 class TestWithHotelSchema(unittest.TestCase):
