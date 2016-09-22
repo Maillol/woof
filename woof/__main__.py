@@ -169,13 +169,16 @@ def main():
             return os.path.abspath(string)
 
     parser = argparse.ArgumentParser('Woof')
-    subparsers = parser.add_subparsers(help='sub-command help')
+    subparsers = parser.add_subparsers(help="See 'woof <command> -h' for more information on a specific command.")
 
-    start_project_parser = subparsers.add_parser('startproject')
+    start_project_parser = subparsers.add_parser('startproject', 
+                                                 help="Creates a new project directory with application "
+                                                      "package structure and configuration file in the "
+                                                      "current directory")
     start_project_parser.add_argument("project_name", metavar="project-name", type=module_name)
     start_project_parser.set_defaults(func=start_project)
 
-    create_db_parser = subparsers.add_parser('createdb', help='Generate database')
+    create_db_parser = subparsers.add_parser('createdb', help='Generates database')
     create_db_parser.add_argument("application", metavar="application-package")
     create_db_parser.add_argument("--conf", metavar="configuration-file", action='store',
                                   help='path to configuration file', dest="path_to_conf",
@@ -185,7 +188,7 @@ def main():
                                   help='path to directory containing python package (default: %(default)s)')
     create_db_parser.set_defaults(func=create_db)
 
-    run_server_parser = subparsers.add_parser('runserver')
+    run_server_parser = subparsers.add_parser('runserver', help="Runs a woof application on a local development server")
     run_server_parser.add_argument("project_dir", metavar="project-directory",
                                    type=PathExist(is_dir=True))
     run_server_parser.add_argument("--conf", metavar="configuration-file", action='store',
