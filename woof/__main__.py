@@ -9,6 +9,7 @@ import os
 import sys
 import importlib
 import traceback
+from pathlib import Path
 
 
 WSGI_TEMPLATE = """
@@ -88,7 +89,34 @@ def run_server(args):
 
     sys.path.insert(0, args.project_dir)
     wsgi = importlib.import_module('wsgi')
-    server = make_server('', args.port, wsgi.application)
+
+    def static_server_wrapper(environ, start_response):
+        if environ['PATH_INFO'].startswith(args.static_url):
+            path = environ['PATH_INFO'][len(args.static_url):].lstrip('/')
+            if not path:
+                path = 'index.html'
+
+            path_to_page = args.static_dir / Path(path)
+
+            try:
+                with Path(path_to_page).open('rb') as page_file:
+                    page = page_file.read()
+
+            except FileNotFoundError:
+                yield from wsgi.application(environ, start_response)
+
+            else:
+                start_response('200 OK', [('Content-Length', str(len(page)))])                
+                yield page
+    
+        else:
+            yield from wsgi.application(environ, start_response)
+
+    if args.static_dir is None:
+        server = make_server('', args.port, wsgi.application)
+    else:
+        server = make_server('', args.port, static_server_wrapper)
+
     server.serve_forever()
 
 
@@ -194,8 +222,19 @@ def main():
     run_server_parser.add_argument("--conf", metavar="configuration-file", action='store',
                                    help='path to configuration file', dest="path_to_conf",
                                    type=PathExist())
-    run_server_parser.add_argument("--port", action='store', help='port to listen',
+    run_server_parser.add_argument("--port", action='store', help='port to listen (default: %(default)s)',
                                    dest="port", type=int, default=8080)
+
+    run_server_parser.add_argument("--static-url", action='store', 
+                                   help='URL to access static content (default: %(default)s). See --static-dir option',
+                                   type=str, default='/')
+
+    run_server_parser.add_argument("--static-dir", action='store',
+                                   help="Directory with static resources. " 
+                                        "The development server can serve static content if this option is given",
+                                   type=PathExist(is_dir=True), default=None)
+
+
     run_server_parser.set_defaults(func=run_server)
 
     try:
