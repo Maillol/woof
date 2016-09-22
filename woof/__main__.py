@@ -61,9 +61,17 @@ def create_db(args):
     if args.pypath is not None:
         sys.path.insert(0, args.pypath)
 
-    controller = importlib.import_module(args.application + '.controllers')
-    MetaResource.initialize(config.database)
-    MetaResource.create_tables()
+    try:
+        controller = importlib.import_module(args.application + '.controllers')
+    except ImportError:
+        print("Error: No module named `{}.controllers' found in PYTHONPATH".format(args.application))
+        print("PYTHONPATH:")
+        for path in sorted(sys.path):
+            print("\t{}".format(path))
+        print("Try to use '--py-path' option in order to specify directories to search for `{}' package.".format(args.application))
+    else:     
+        MetaResource.initialize(config.database)
+        MetaResource.create_tables()
 
 
 def run_server(args):
@@ -167,14 +175,14 @@ def main():
     start_project_parser.add_argument("project_name", metavar="project-name", type=module_name)
     start_project_parser.set_defaults(func=start_project)
 
-    create_db_parser = subparsers.add_parser('createdb')
+    create_db_parser = subparsers.add_parser('createdb', help='Generate database')
     create_db_parser.add_argument("application", metavar="application-package")
     create_db_parser.add_argument("--conf", metavar="configuration-file", action='store',
                                   help='path to configuration file', dest="path_to_conf",
                                   type=PathExist())
     create_db_parser.add_argument("--py-path", metavar="py-path", action='store',
-                                  type=PathExist(is_dir=True), dest="pypath",
-                                  help='path to directory containing python package')
+                                  type=PathExist(is_dir=True), dest="pypath", default=os.getcwd(),
+                                  help='path to directory containing python package (default: %(default)s)')
     create_db_parser.set_defaults(func=create_db)
 
     run_server_parser = subparsers.add_parser('runserver')
