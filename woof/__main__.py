@@ -80,6 +80,11 @@ def run_server(args):
     Launch the development server.
     """
 
+    content_types = {
+        '.js': ('Content-Type', 'application/javascript'),
+        '.html': ('Content-Type', 'text/html')
+    }
+
     if args.path_to_conf is not None:
         os.environ[config.ENVIRON_VAR_NAME] = args.path_to_conf
 
@@ -106,7 +111,11 @@ def run_server(args):
                 yield from wsgi.application(environ, start_response)
 
             else:
-                start_response('200 OK', [('Content-Length', str(len(page)))])                
+                start_response('200 OK', [
+                    ('Content-Length', str(len(page))),
+                    content_types.get(path_to_page.suffix,
+                                      ('Content-Type', 'text/plain'))
+                ])
                 yield page
     
         else:
