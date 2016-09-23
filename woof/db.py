@@ -105,6 +105,9 @@ class DataBase:
         connection = self.pool.setdefault(threading.current_thread(),
                                           self.connector(**self.connection_parameters))
         cursor = connection.cursor()
+        if not hasattr(cursor, 'connection'):
+            cursor.connection = connection
+
         try:
             cursor.execute(sql_query, parameters)
             return cursor

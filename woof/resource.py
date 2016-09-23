@@ -423,7 +423,9 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.save(self._table_name, fields)
-        last_id = db.execute(sql, values).lastrowid  # FIXME push last_id to _state.
+        cursor = db.execute(sql, values)
+        last_id = cursor.lastrowid  # FIXME push last_id to _state.
+        cursor.connection.commit()
         for field in self.Meta.primary_key:
             if field.name == 'id':
                self.id = last_id
@@ -456,7 +458,7 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.update(self._table_name, fields, self._id_fields_names)
-        db.execute(sql, values)
+        db.execute(sql, values).connection.commit()
 
         for resource in update_with_self:
             resource.update()
@@ -468,7 +470,7 @@ class Resource(metaclass=MetaResource):
 
         db = type(type(self)).db
         sql = db.sql_translator.delete(self._table_name, self._id_fields_names)
-        db.execute(sql, values)
+        db.execute(sql, values).connection.commit()
 
     def to_dict(self):
         dictionary = {}
