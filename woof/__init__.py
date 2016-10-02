@@ -1,2 +1,2 @@
-__version__ = "0.0.1 (alpha)"
+__version__ = "0.0a1"
 __license__ = "GPL V3"
