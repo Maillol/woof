@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 #-*- coding:utf-8 -*-
 
+from traceback import extract_tb
 import json
 import os
+
 from .optimizer import optimize
+from ..db import IntegrityError
+
+
+OPTIMIZE = False
+
 
 class RESTServerError(Exception):
     pass
@@ -19,6 +26,25 @@ class NotFoundError(RESTServerError):
     body = b'{"error": "Not Found"}'
 
 
+def traceback_to_dict(error):
+    """
+    Extract traceback from an exception.
+    """
+    traceback = {'error': type(error).__name__,
+                 'args': error.args,
+                 'traceback': extract_tb(error.__traceback__),
+                 'context': None,
+                 'explicitly_chained': False}
+
+    if error.__cause__ is not None:
+        traceback['explicitly_chained'] = True
+
+    if error.__context__ is not None:
+        traceback['context'] = traceback_to_dict(error.__context__)
+
+    return traceback
+
+
 class RESTServer:
 
     def __init__(self, entry_point):
@@ -27,7 +53,8 @@ class RESTServer:
         self.post_urls = entry_point.post_urls
         self.del_urls = entry_point.del_urls
         self.opt_urls = entry_point.opt_urls
-        optimize(self.get_urls)
+        if OPTIMIZE:
+            optimize(self.get_urls)
 
     @staticmethod
     def _parse_body(environ):
@@ -105,6 +132,14 @@ class RESTServer:
         except RESTServerError as error:
             code = error.code
             body = error.body
+
+        except IntegrityError as error:
+            code = '409 Conflict'
+            body = json.dumps({"error": error.args[0]}).encode('utf-8')
+
+        except Exception as error:
+            code = '500 Internal Server Error'
+            body = json.dumps(traceback_to_dict(error)).encode('utf-8')
 
         start_response(code, response_headers)
         yield body
