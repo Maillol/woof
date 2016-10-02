@@ -11,6 +11,6 @@ from demo.controllers import root_url
 from woof.server import RESTServer, config
 from woof.resource import MetaResource
 
-#MetaResource.initialize(config.database)
+MetaResource.initialize(config.database)
 
 application = RESTServer(root_url)
